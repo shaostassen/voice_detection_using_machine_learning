@@ -1,5 +1,7 @@
 # SpeechLens
 
+[![CI](https://github.com/shaostassen/voice_detection_using_machine_learning/actions/workflows/ci.yml/badge.svg)](https://github.com/shaostassen/voice_detection_using_machine_learning/actions/workflows/ci.yml)
+
 Local language identification + robust transcription. Point it at an audio
 file (or a microphone), get back the language with a calibrated-ish
 probability, a transcript with per-segment confidence, and an honest set of
@@ -103,6 +105,23 @@ python scripts/validate.py snr clip.wav --ref "known transcript"   # WER/CER vs 
 python scripts/validate.py snr clip.wav --ref "..." --denoise      # A/B the denoise stage
 python scripts/validate.py bench clip.wav --models small,distil-large-v3,large-v3
 ```
+
+Every run prints a provenance banner — hardware, model, device,
+`compute_type`, date, and the raw command — because a number is only
+recordable alongside the run that produced it. Placement is explicit via
+`--device {auto,cuda,cpu}` and `--compute-type {float16,int8_float16,int8,…}`;
+`auto` picks cuda+float16 where a GPU exists and cpu+int8 otherwise.
+
+No local NVIDIA GPU is used for this project, so the authoritative numbers
+come from a free cloud T4 running `large-v3` at `float16`:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shaostassen/voice_detection_using_machine_learning/blob/main/notebooks/validate_t4.ipynb)
+
+`notebooks/validate_t4.ipynb` clones this repo, installs the stack
+(including the cuDNN 9 that CTranslate2's CUDA path needs), re-checks the
+offline test invariant, runs all three studies against labeled LibriSpeech
+audio, and emits a block ready to paste into
+[`docs/VALIDATION.md`](docs/VALIDATION.md) — where every result lives.
 
 For a real accuracy number, run WER on a labeled set you care about
 (LibriSpeech test-clean/test-other, FLEURS for multilingual, or your own
