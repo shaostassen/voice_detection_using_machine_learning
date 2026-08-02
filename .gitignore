@@ -1,1 +1,32 @@
 CLAUDE.md
+
+# environments
+.venv/
+venv/
+
+# python caches / build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# notebooks
+.ipynb_checkpoints/
+
+# model weights and caches — never commit these
+*.bin
+*.onnx
+*.ct2
+models/
+.cache/
+
+# scratch audio
+*.wav
+*.flac
+*.mp3
+*.m4a
+
+# os / editor
+.DS_Store
