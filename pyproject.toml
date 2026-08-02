@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "speechlens"
+version = "0.1.0"
+description = "Local language identification + robust transcription (faster-whisper) with an explicit anti-hallucination harness"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "soundfile>=0.12",
+    "faster-whisper>=1.0,<2",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+denoise = ["noisereduce>=3.0"]
+
+[project.scripts]
+speechlens = "speechlens.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["speechlens*"]
+
+[tool.setuptools.package-data]
+speechlens = ["static/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
