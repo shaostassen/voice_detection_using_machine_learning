@@ -89,6 +89,50 @@ jargon). The optional `--denoise` stage is deliberately off by default —
 Whisper is trained on noisy audio and spectral gating can smear formants;
 A/B it with the SNR study before trusting it.
 
+## Results
+
+Tesla T4 (Colab), `large-v3`, `float16`, 2026-08-02. One 23.2 s clip of
+concatenated LibriSpeech utterances with a ground-truth transcript. Raw logs
+and the full analysis are in [`docs/VALIDATION.md`](docs/VALIDATION.md);
+reproduce with [`notebooks/validate_t4.ipynb`](notebooks/validate_t4.ipynb).
+
+**Throughput** — decode only; model load is excluded.
+
+| model | RTF | × realtime |
+|---|---|---|
+| base | 0.038 | 26.3 |
+| small | 0.036 | 27.8 |
+| distil-large-v3 | 0.046 | 21.7 |
+| large-v3 | 0.082 | 12.2 |
+
+**Noise robustness** — white noise at a seeded SNR ladder, denoise off.
+
+| SNR dB | lang | p | WER | flagged |
+|---|---|---|---|---|
+| clean | en | 1.00 | 0.03 | 0 |
+| 20 | en | 1.00 | 0.05 | 0 |
+| 10 | en | 1.00 | 0.03 | 0 |
+| 5 | en | 1.00 | 0.05 | 0 |
+| 0 | en | 0.97 | 0.15 | 0 |
+| −5 | en | 0.77 | 0.33 | 0 |
+
+Language ID held `en` across the entire ladder (chunk-voted LID, 5/5 on the
+multilingual smoke study including Mandarin), and WER degraded smoothly
+rather than collapsing into hallucinated text.
+
+Two results went against expectations, and both are load-bearing:
+
+- **The confidence gate never fired.** Zero flagged segments at every level,
+  including −5 dB where a third of the words are wrong — `large-v3` remains
+  confident while incorrect, so `exp(avg_logprob)` never crosses 0.55. The
+  gate is unexercised, not validated. Threshold sweep is an open item.
+- **`--denoise` lost at every SNR**, by +0.02 to +0.15 WER, worst where it
+  was supposed to help most. It stays off by default.
+
+Single clip, single speaker: WER differences below ~0.05 are not resolvable
+here. These characterize behavior and cost; they are not corpus benchmarks.
+CPU baseline on the 9950X and the Jetson Orin Nano numbers are still pending.
+
 ## Validation runbook
 
 Unit and component tests (no weights, no GPU, run anywhere):

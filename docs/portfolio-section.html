@@ -132,9 +132,9 @@
       <b>Confidence that surfaces.</b> Per-segment confidence is
       <code>exp(avg_logprob)</code> — the geometric mean token probability —
       and anything under the threshold is flagged in the output schema, the
-      CLI, and the web UI. The design goal is that <em>flags rise before the
-      transcript goes bad</em>, which is the property the SNR sweep is built
-      to falsify.
+      CLI, and the web UI. The design goal was that <em>flags rise before the
+      transcript goes bad</em>. The noise sweep was built to falsify that,
+      and did: see below.
     </li>
   </ul>
   <!-- /CUT:APPROACH -->
@@ -164,31 +164,61 @@
   <!-- CUT:RESULT -->
   <h3>Result</h3>
   <ul class="sl-chips">
-    <li class="sl-chip"><b>30</b><span>offline tests</span></li>
-    <li class="sl-chip"><b>0</b><span>weights to run them</span></li>
-    <li class="sl-chip" data-pending="true"><b>—</b><span>RTF · large-v3 · T4</span></li>
-    <li class="sl-chip" data-pending="true"><b>—</b><span>WER at −5 dB SNR</span></li>
+    <li class="sl-chip"><b>12.2×</b><span>realtime · large-v3 · T4</span></li>
+    <li class="sl-chip"><b>33%</b><span>WER at −5 dB SNR</span></li>
+    <li class="sl-chip"><b>5/5</b><span>languages identified</span></li>
+    <li class="sl-chip"><b>30</b><span>tests · 0 weights</span></li>
   </ul>
   <p>
-    The suite runs in seconds with no network and no model weights, on every
-    push, across Python 3.11 and 3.12. That is a deliberate architectural
-    property, not a convenience: the pipeline takes its transcriber and
-    detector by injection, so the orchestration logic is testable without
-    three gigabytes of parameters. Anything that genuinely needs weights lives
-    in a separate validation harness and never in the test suite.
+    On a free-tier Tesla T4, <code>large-v3</code> at <code>float16</code>
+    decodes at RTF 0.082 — 12.2× faster than realtime.
+    Under white noise the transcript degrades gracefully rather than falling
+    off a cliff: 3% word error on clean audio, 33% at −5 dB SNR, with the
+    language still correctly identified at every step of the ladder. Chunk
+    voting held English at p=1.00 down to 5 dB and decayed smoothly from
+    there instead of staying falsely pegged.
   </p>
   <p>
-    Three interfaces sit on the one pipeline — a Python API, a CLI, and a
-    FastAPI service with a single-page web UI — and the whole thing holds a
-    hard dependency ceiling: no torch.
+    The test suite runs in seconds with no network and no model weights, on
+    every push, across Python 3.11 and 3.12. That is a deliberate
+    architectural property, not a convenience: the pipeline takes its
+    transcriber and detector by injection, so the orchestration logic is
+    testable without three gigabytes of parameters. Anything that genuinely
+    needs weights lives in a separate validation harness and never in the
+    test suite. Three interfaces sit on the one pipeline — a Python API, a
+    CLI, and a FastAPI service with a single-page web UI — under a hard
+    dependency ceiling: no torch.
   </p>
+
+  <h3>What the measurements refuted</h3>
+  <p>
+    Two of the harness's design assumptions did not survive contact with the
+    sweep, which is the point of running it.
+  </p>
+  <ul class="sl-body">
+    <li>
+      <b>The confidence gate never fired.</b> Flagged-segment count was zero
+      at every noise level — including −5 dB, where one word in three is
+      wrong. <code>large-v3</code> stays confident while being incorrect, so
+      <code>exp(avg_logprob)</code> never crosses the 0.55 threshold. The
+      gate is not validated; it is unexercised, which is the weaker result.
+      Open follow-up: sweep the threshold, or move to a signal that actually
+      tracked degradation — the LID probability did.
+    </li>
+    <li>
+      <b>The optional denoise stage made things worse.</b> Spectral gating
+      was expected to start paying off at low SNR. It never did: word error
+      rose at every level, and the gap widened as conditions got worse,
+      reaching +15 points at −5 dB. It stays off by default and is not
+      recommended at any SNR tested.
+    </li>
+  </ul>
   <p class="sl-note">
-    The two pending chips stay em dashes until a measured run fills them in.
-    Every number this project publishes carries the hardware, model,
-    <code>compute_type</code>, and date that produced it; authoritative
-    figures come from a cloud T4 running <code>large-v3</code> at
-    <code>float16</code>, since no development machine here has an NVIDIA GPU.
-    An unsourced number is a bug.
+    Every number here carries the hardware, model, <code>compute_type</code>,
+    and date that produced it, with raw logs committed alongside. All of the
+    above is one 23-second LibriSpeech clip — enough to characterize behavior
+    and cost, not a corpus benchmark, and labeled that way in the validation
+    log. An unsourced number is a bug.
   </p>
   <!-- /CUT:RESULT -->
 
