@@ -13,25 +13,37 @@ Three studies:
 
   bench   Real-time factor across model sizes on one file.
 
+Every run prints a provenance banner (hardware / model / device / compute_type
+/ date / raw command) so its numbers can be pasted straight into
+docs/VALIDATION.md. Nothing gets recorded without it.
+
 Examples:
   python scripts/validate.py smoke --model large-v3
   python scripts/validate.py snr clip.wav --ref "reference transcript"
   python scripts/validate.py snr clip.wav --ref "..." --denoise
   python scripts/validate.py bench clip.wav --models small,distil-large-v3,large-v3
+
+  # T4 (Colab/Kaggle), the authoritative-numbers configuration:
+  python scripts/validate.py smoke --model large-v3 \\
+      --device cuda --compute-type float16
 """
 from __future__ import annotations
 
 import argparse
+import platform
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from speechlens.asr import resolve_device  # noqa: E402
 from speechlens.audio import load_audio  # noqa: E402
 from speechlens.metrics import error_rate  # noqa: E402
 from speechlens.pipeline import SpeechLens  # noqa: E402
@@ -64,8 +76,43 @@ def mix_at_snr(clean: np.ndarray, snr_db: float, rng) -> np.ndarray:
     return clean + noise * np.sqrt(target / max(p_noise, 1e-12))
 
 
+def hardware_label() -> str:
+    """Best-effort one-line hardware string for the VALIDATION.md record."""
+    smi = shutil.which("nvidia-smi")
+    if smi is not None:
+        try:
+            out = subprocess.run(
+                [smi, "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=10, check=True)
+            gpus = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+            if gpus:
+                return gpus[0] if len(gpus) == 1 else f"{len(gpus)}x {gpus[0]}"
+        except Exception:
+            pass
+    cpu = platform.processor() or platform.machine()
+    return f"{platform.system()} {platform.machine()} ({cpu})".strip()
+
+
+def banner(study: str, args, model: str) -> tuple:
+    """Print the provenance header every run must be recorded with.
+
+    No number leaves this script without the hardware / model / compute_type /
+    date it was produced on — see the 'no fabricated metrics' rule.
+    """
+    device, compute_type = resolve_device(args.device, args.compute_type)
+    print(f"study={study}  hardware={hardware_label()}  model={model}  "
+          f"device={device}  compute_type={compute_type}  "
+          f"date={date.today().isoformat()}")
+    # shlex.join so a --ref containing spaces stays copy-pasteable: the
+    # recorded command has to actually re-run.
+    print(f"cmd: python {shlex.join(sys.argv)}\n")
+    return device, compute_type
+
+
 def cmd_smoke(args) -> None:
-    lens = SpeechLens(model_size=args.model)
+    banner("smoke", args, args.model)
+    lens = SpeechLens(model_size=args.model, device=args.device,
+                      compute_type=args.compute_type)
     print(f"{'voice':>6} {'expect':>7} {'got':>5} {'p':>5} "
           f"{'metric':>7} {'err':>6}")
     hits = 0
@@ -87,7 +134,9 @@ def cmd_smoke(args) -> None:
 
 
 def cmd_snr(args) -> None:
-    lens = SpeechLens(model_size=args.model, denoise=args.denoise)
+    banner("snr", args, args.model)
+    lens = SpeechLens(model_size=args.model, device=args.device,
+                      compute_type=args.compute_type, denoise=args.denoise)
     clean, sr = load_audio(args.audio)
     rng = np.random.default_rng(0)
     levels = [None, 20, 10, 5, 0, -5]
@@ -111,12 +160,14 @@ def cmd_snr(args) -> None:
 
 
 def cmd_bench(args) -> None:
+    banner("bench", args, args.models)
     clean, sr = load_audio(args.audio)
     dur = len(clean) / sr
     print(f"audio: {dur:.1f}s")
     print(f"{'model':>20} {'rtf':>8} {'x realtime':>11}")
     for size in args.models.split(","):
-        lens = SpeechLens(model_size=size.strip())
+        lens = SpeechLens(model_size=size.strip(), device=args.device,
+                          compute_type=args.compute_type)
         r = lens.analyze((clean, sr))
         rtf = r.performance["rtf"]
         print(f"{size.strip():>20} {rtf:>8.3f} {1.0 / rtf:>11.1f}")
@@ -128,11 +179,21 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("smoke", help="multilingual TTS round-trip")
+    # Shared placement flags. Default "auto" keeps the previous behavior
+    # (cuda+float16 where a GPU exists, cpu+int8 otherwise); passing them
+    # explicitly is what lets a run be *recorded* rather than inferred.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--device", default="auto",
+                        choices=["auto", "cuda", "cpu"])
+    common.add_argument("--compute-type", default="auto",
+                        help="float16 / int8_float16 / int8 / float32")
+
+    s = sub.add_parser("smoke", parents=[common],
+                       help="multilingual TTS round-trip")
     s.add_argument("--model", default="large-v3")
     s.set_defaults(func=cmd_smoke)
 
-    n = sub.add_parser("snr", help="noise robustness sweep")
+    n = sub.add_parser("snr", parents=[common], help="noise robustness sweep")
     n.add_argument("audio")
     n.add_argument("--ref", default=None,
                    help="reference transcript for WER/CER")
@@ -140,7 +201,8 @@ def main() -> None:
     n.add_argument("--denoise", action="store_true")
     n.set_defaults(func=cmd_snr)
 
-    b = sub.add_parser("bench", help="RTF across model sizes")
+    b = sub.add_parser("bench", parents=[common],
+                       help="RTF across model sizes")
     b.add_argument("audio")
     b.add_argument("--models", default="small,large-v3")
     b.set_defaults(func=cmd_bench)
