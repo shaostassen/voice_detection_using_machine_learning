@@ -1,0 +1,9 @@
+study=bench  hardware=Tesla T4  model=base,small,distil-large-v3,large-v3  device=cuda  compute_type=float16  date=2026-08-02
+cmd: python scripts/validate.py bench /content/validation_clip.wav --models base,small,distil-large-v3,large-v3 --device cuda --compute-type float16
+
+audio: 23.2s
+               model      rtf  x realtime
+                base    0.038        26.3
+               small    0.036        27.8
+     distil-large-v3    0.046        21.7
+            large-v3    0.082        12.2

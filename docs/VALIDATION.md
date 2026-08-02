@@ -4,99 +4,167 @@ Every `scripts/validate.py` run gets recorded here. A number is only allowed
 to exist in this project alongside the run that produced it — hardware,
 model, `compute_type`, date, and the raw command. `validate.py` prints all
 five as a provenance banner on its first two lines, so a record is a paste,
-not a reconstruction.
-
-**Nothing below is filled in yet.** The tables are the shape the results
-take; `—` means not-yet-measured, and it stays `—` until a real run replaces
-it. No estimated, interpolated, or remembered values.
+not a reconstruction. Raw stdout for each run is kept verbatim in
+[`validation_runs/`](validation_runs/).
 
 ## How results get produced
 
 | Environment | Role | Entry point |
 |---|---|---|
 | Free cloud T4 (Colab/Kaggle), `large-v3`, `float16` | **Authoritative numbers.** No local NVIDIA GPU exists on any dev machine. | `notebooks/validate_t4.ipynb` |
-| Ryzen 9 9950X, 32 threads, `int8` | CPU baseline for the same clip | `scripts/validate.py bench --device cpu --compute-type int8` |
+| Ryzen 9 9950X, 32 threads, `int8` | CPU baseline for the same clip — **not yet run** | `scripts/validate.py bench --device cpu --compute-type int8` |
 | MacBook Pro M2, `int8` | Local iteration only (`base` / `small`) | same, smaller models |
 | Jetson Orin Nano | Edge target; GPU path unverified (needs a ctranslate2 CUDA build for JetPack) | pending |
 
-The T4 notebook runs all three studies and emits a ready-to-paste block for
-this file.
+---
+
+# Run — 2026-08-02 — Tesla T4
+
+| field | value |
+|---|---|
+| hardware | Tesla T4 (Colab) |
+| model | `large-v3` |
+| compute_type | `float16` |
+| device | `cuda` |
+| audio source | 3 concatenated LibriSpeech utterances, 23.2 s, ground-truth transcript |
+| publishable WER | yes |
+| notebook | `notebooks/validate_t4.ipynb` |
+| raw logs | [`validation_runs/`](validation_runs/) |
+
+**Statistical power caveat, applies to everything below:** this is a single
+23.2 s clip from one speaker. WER differences below roughly 0.05 are not
+resolvable here, and the SNR ladder is non-monotonic in places (0.05 at
+20 dB vs 0.03 at 10 dB) which is measurement noise, not a real effect. These
+numbers characterize behavior and order-of-magnitude cost. They are not a
+benchmark result on a labeled corpus.
 
 ## Study 1 — smoke (multilingual LID + plumbing)
 
-espeak-ng synthesizes a known sentence in 5 languages; checks the detected
-language code and reports error rates. espeak audio is robotic and synthetic,
-so **nonzero error rates are expected and are not an accuracy claim** — the
-figure that matters is LID hits out of 5.
+```
+python scripts/validate.py smoke --model large-v3 --device cuda --compute-type float16
+```
 
-| date | hardware | model | compute_type | LID hits | command |
+| voice | expected | got | p | metric | err |
 |---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| en | en | en | 0.90 | wer | 0.00 |
+| de | de | de | 0.99 | wer | 0.11 |
+| fr | fr | fr | 0.32 | wer | 0.70 |
+| es | es | es | 0.91 | wer | 0.00 |
+| cmn | zh | zh | 0.80 | cer | 0.25 |
+
+**LID hits: 5/5.** Chunk-voted LID identified every language correctly,
+including Mandarin, and the CJK branch correctly dispatched to CER.
+
+The error rates are *not* an accuracy claim — espeak-ng audio is robotic and
+synthetic. The French row is the interesting one: LID stayed correct but at
+p=0.32, and WER was 0.70. Low LID confidence tracked genuinely degraded
+recognition rather than being noise, which is the intended behavior of the
+probability output.
 
 ## Study 2 — SNR sweep (noise robustness)
 
-White noise mixed into labeled real speech at a falling SNR ladder (clean,
-20, 10, 5, 0, −5 dB), seeded for reproducibility. Run twice, with and
-without `--denoise`, to A/B the spectral-gating stage. Prior expectation:
-denoise loses above ~5 dB SNR — record which arm actually wins.
+White noise mixed at a falling SNR ladder, seeded (`default_rng(0)`) so the
+ladder is reproducible.
 
-Three things to watch:
-
-1. **LID stability** as noise rises — chunk voting should hold the correct
-   language further down the ladder than a single window would.
-2. **Graceful WER degradation** rather than a cliff into hallucinated text.
-3. **Flagged-segment counts climbing _before_ the transcript goes bad.**
-   Flags leading errors is the confidence gate working; flags trailing
-   errors means the gate is decorative.
-
-WER is only meaningful against real speech with a ground-truth transcript
-(the notebook defaults to labeled LibriSpeech utterances). A sweep run on
-espeak audio validates plumbing only and must not be published.
-
-**Denoise OFF** — hardware `—`, model `—`, compute_type `—`, date `—`
-
-```
-command: —
-```
+**Denoise OFF** — `large-v3`, `float16`, Tesla T4, 2026-08-02
 
 | SNR dB | lang | p | metric | err | flagged |
 |---|---|---|---|---|---|
-| clean | — | — | — | — | — |
-| 20 | — | — | — | — | — |
-| 10 | — | — | — | — | — |
-| 5 | — | — | — | — | — |
-| 0 | — | — | — | — | — |
-| −5 | — | — | — | — | — |
+| clean | en | 1.00 | wer | 0.03 | 0 |
+| 20 | en | 1.00 | wer | 0.05 | 0 |
+| 10 | en | 1.00 | wer | 0.03 | 0 |
+| 5 | en | 1.00 | wer | 0.05 | 0 |
+| 0 | en | 0.97 | wer | 0.15 | 0 |
+| −5 | en | 0.77 | wer | 0.33 | 0 |
 
-**Denoise ON** — hardware `—`, model `—`, compute_type `—`, date `—`
-
-```
-command: —
-```
+**Denoise ON** — same run configuration, `--denoise`
 
 | SNR dB | lang | p | metric | err | flagged |
 |---|---|---|---|---|---|
-| clean | — | — | — | — | — |
-| 20 | — | — | — | — | — |
-| 10 | — | — | — | — | — |
-| 5 | — | — | — | — | — |
-| 0 | — | — | — | — | — |
-| −5 | — | — | — | — | — |
+| clean | en | 1.00 | wer | 0.05 | 0 |
+| 20 | en | 1.00 | wer | 0.05 | 0 |
+| 10 | en | 1.00 | wer | 0.05 | 0 |
+| 5 | en | 1.00 | wer | 0.12 | 0 |
+| 0 | en | 0.98 | wer | 0.28 | 0 |
+| −5 | en | 0.63 | wer | 0.48 | 0 |
 
-A/B verdict: **—**
+### What the sweep says
+
+**1. LID stability — holds.** The language stayed `en` at every level down to
+−5 dB, at p=1.00 through 5 dB. Confidence decayed smoothly (1.00 → 0.97 →
+0.77) rather than collapsing, so the probability degrades in step with the
+audio instead of staying falsely pegged.
+
+**2. WER degradation — graceful.** 0.03 clean → 0.33 at −5 dB, with no cliff
+and no runaway hallucination: an 11× error increase across a 25 dB swing in
+conditions, monotone once past the noise floor of the measurement.
+
+**3. Confidence flags — DID NOT FIRE. This is a negative result.**
+`flagged` is 0 at every single level, including −5 dB where one word in
+three is wrong. The stated design goal was that flag counts climb *before*
+the transcript degrades; on this clip they never climbed at all. The
+confidence gate contributed nothing here.
+
+The mechanism is visible in the definition: a segment is flagged when
+`exp(avg_logprob) < 0.55`, i.e. `avg_logprob < −0.598`. `large-v3` stays
+confident on this material even when it is wrong — well-documented Whisper
+overconfidence — so the 0.55 threshold is simply never crossed. **Do not
+claim the confidence gate is validated.** It is unfalsified in the sense
+that it was never exercised, which is the weaker and less interesting state.
+
+Follow-up before this can be claimed to work: sweep the `low_confidence`
+threshold against this ladder and find the value where flag counts lead WER
+growth, or establish that `avg_logprob` on `large-v3` is too flat to
+threshold usefully and that a different signal (`no_speech_prob`, entropy,
+or LID probability, which *did* track degradation) is the right one.
+Per the hard rules, any change to `low_confidence` needs its own A/B here.
+
+### A/B verdict — denoise LOSES, and loses everywhere
+
+| SNR dB | WER off | WER on | delta |
+|---|---|---|---|
+| clean | 0.03 | 0.05 | +0.02 |
+| 20 | 0.05 | 0.05 | 0.00 |
+| 10 | 0.03 | 0.05 | +0.02 |
+| 5 | 0.05 | 0.12 | +0.07 |
+| 0 | 0.15 | 0.28 | +0.13 |
+| −5 | 0.33 | 0.48 | +0.15 |
+
+Denoise is neutral-to-slightly-harmful in clean conditions and **clearly
+harmful exactly where it was supposed to help** — the gap widens as SNR
+falls, reaching +0.15 WER at −5 dB. It also degraded LID confidence at −5 dB
+(0.63 with, 0.77 without).
+
+This is stronger than the prior recorded in CLAUDE.md ("denoise loses above
+~5 dB SNR"). The prior expected a crossover where spectral gating starts
+paying off at low SNR; there is no crossover in this data. Spectral gating
+smears the formants Whisper relies on, and Whisper's noise robustness is
+already better than the filter's. **Keep `denoise=False` as the default;
+`--denoise` stays opt-in and is not recommended at any SNR tested.**
 
 ## Study 3 — bench (real-time factor)
 
-RTF = processing time / audio duration; lower is better. Model load happens
-in the `SpeechLens` constructor and is excluded, so this measures decode
-throughput, not cold start. Source of the portfolio RTF chip.
+```
+python scripts/validate.py bench /content/validation_clip.wav \
+    --models base,small,distil-large-v3,large-v3 --device cuda --compute-type float16
+```
 
-| date | hardware | compute_type | model | RTF | × realtime | command |
-|---|---|---|---|---|---|---|
-| — | — | — | base | — | — | — |
-| — | — | — | small | — | — | — |
-| — | — | — | distil-large-v3 | — | — | — |
-| — | — | — | large-v3 | — | — | — |
+23.2 s of audio, Tesla T4, `float16`, 2026-08-02. Model load happens in the
+`SpeechLens` constructor and is excluded, so this is decode throughput, not
+cold start. Timing covers the full pipeline: VAD, chunk-voted LID, and decode.
+
+| model | RTF | × realtime |
+|---|---|---|
+| base | 0.038 | 26.3 |
+| small | 0.036 | 27.8 |
+| distil-large-v3 | 0.046 | 21.7 |
+| large-v3 | 0.082 | 12.2 |
+
+`large-v3` runs **12.2× faster than realtime** on a free-tier T4. `base` and
+`small` are indistinguishable here (0.038 vs 0.036) — at ~27× realtime on a
+23 s clip the per-run fixed costs dominate, so this bench cannot separate
+them; it is not evidence that `small` is faster than `base`.
+`distil-large-v3` gives 1.8× the throughput of `large-v3`.
 
 ## Config-change A/Bs
 
@@ -106,4 +174,15 @@ temp ladder 0→1.0, CR gate 2.4, logprob gate −1.0, no-speech 0.6, flag
 
 | date | knob | from → to | effect on WER / flags | verdict |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-08-02 | `denoise` | off → on | WER +0.02 to +0.15, worst at low SNR; LID p 0.77 → 0.63 at −5 dB | **rejected**, keep off |
+| — | `low_confidence` (0.55) | — | open: gate never fired across the whole ladder | needs a threshold sweep |
+
+## Open items
+
+- **CPU baseline** on the 9950X (task 4) — not yet run.
+- **`low_confidence` threshold sweep** — the gate did not fire at any SNR;
+  it cannot be described as working until this is resolved.
+- **Jetson Orin Nano** — ctranslate2 CUDA build for JetPack unattempted.
+- Broader corpus (LibriSpeech test-clean/test-other, FLEURS) before any of
+  these WER figures are described as benchmark results rather than
+  characterization of one clip.

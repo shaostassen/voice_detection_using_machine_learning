@@ -1,0 +1,12 @@
+study=smoke  hardware=Tesla T4  model=large-v3  device=cuda  compute_type=float16  date=2026-08-02
+cmd: python scripts/validate.py smoke --model large-v3 --device cuda --compute-type float16
+
+ voice  expect   got     p  metric    err
+    en      en    en  0.90     wer   0.00
+    de      de    de  0.99     wer   0.11
+    fr      fr    fr  0.32     wer   0.70
+    es      es    es  0.91     wer   0.00
+   cmn      zh    zh  0.80     cer   0.25
+
+LID hits: 5/5. espeak audio is robotic and synthetic;
+expect nonzero error rates — this validates plumbing and LID, not peak accuracy.

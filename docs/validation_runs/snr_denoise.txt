@@ -1,0 +1,11 @@
+study=snr  hardware=Tesla T4  model=large-v3  device=cuda  compute_type=float16  date=2026-08-02
+cmd: python scripts/validate.py snr /content/validation_clip.wav --model large-v3 --ref 'MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL NOR IS MISTER QUILTER'"'"'S MANNER LESS INTERESTING THAN HIS MATTER HE TELLS US THAT AT THIS FESTIVE SEASON OF THE YEAR WITH CHRISTMAS AND ROAST BEEF LOOMING BEFORE US SIMILES DRAWN FROM EATING AND ITS RESULTS OCCUR MOST READILY TO THE MIND' --denoise --device cuda --compute-type float16
+
+model=large-v3 (denoise ON)
+ SNR dB  lang     p  metric    err  flagged
+  clean    en  1.00     wer   0.05        0
+     20    en  1.00     wer   0.05        0
+     10    en  1.00     wer   0.05        0
+      5    en  1.00     wer   0.12        0
+      0    en  0.98     wer   0.28        0
+     -5    en  0.63     wer   0.48        0

@@ -22,6 +22,9 @@ dist/
 models/
 .cache/
 
+# downloaded run bundles (their contents are committed under docs/validation_runs/)
+validation_t4_logs.zip
+
 # scratch audio
 *.wav
 *.flac
