@@ -12,8 +12,8 @@ not a reconstruction. Raw stdout for each run is kept verbatim in
 | Environment | Role | Entry point |
 |---|---|---|
 | Free cloud T4 (Colab/Kaggle), `large-v3`, `float16` | **Authoritative numbers.** No local NVIDIA GPU exists on any dev machine. | `notebooks/validate_t4.ipynb` |
-| Ryzen 9 9950X, 32 threads, `int8` | CPU baseline for the same clip — **not yet run** | `scripts/validate.py bench --device cpu --compute-type int8` |
-| MacBook Pro M2, `int8` | Local iteration only (`base` / `small`) | same, smaller models |
+| MacBook Pro M2, `int8` | **CPU baseline** — measured 2026-08-02, same clip as the T4 run | `scripts/validate.py bench --device cpu --compute-type int8` |
+| Ryzen 9 9950X, 32 threads, `int8` | Server-CPU baseline — **not yet run** | same command |
 | Jetson Orin Nano | Edge target; GPU path unverified (needs a ctranslate2 CUDA build for JetPack) | pending |
 
 ---
@@ -165,6 +165,60 @@ cold start. Timing covers the full pipeline: VAD, chunk-voted LID, and decode.
 23 s clip the per-run fixed costs dominate, so this bench cannot separate
 them; it is not evidence that `small` is faster than `base`.
 `distil-large-v3` gives 1.8× the throughput of `large-v3`.
+
+---
+
+# Run — 2026-08-02 — Apple M2 (CPU baseline)
+
+| field | value |
+|---|---|
+| hardware | Apple M2 (Darwin arm64) |
+| model | `base`, `small`, `distil-large-v3` |
+| compute_type | `int8` |
+| device | `cpu` |
+| audio source | **the same 23.2 s LibriSpeech clip as the T4 run** |
+| raw log | [`validation_runs/bench_cpu_m2.txt`](validation_runs/bench_cpu_m2.txt) |
+
+Same clip, same command shape, so these rows are directly comparable to the
+T4 table above rather than approximately so.
+
+```
+python scripts/validate.py bench clip.wav \
+    --models base,small,distil-large-v3 --device cpu --compute-type int8
+```
+
+| model | RTF (M2, int8) | × realtime | RTF (T4, float16) | CPU slowdown |
+|---|---|---|---|---|
+| base | 0.083 | 12.0 | 0.038 | 2.2× |
+| small | 0.205 | 4.9 | 0.036 | 5.7× |
+| distil-large-v3 | 0.605 | 1.7 | 0.046 | 13.2× |
+
+Run-to-run variance is ~2% (an earlier identical run gave 0.085 / 0.203 /
+0.588), so these are stable at the precision shown.
+
+### What the CPU baseline says
+
+**The local-deployment claim holds.** `small` at int8 runs at **4.9×
+realtime** on a laptop CPU, and even `distil-large-v3` clears realtime at
+1.7×. A CPU-only box can run this pipeline live, which is the claim the
+project's "no cloud calls" framing depends on and which no GPU number could
+support.
+
+**The GPU advantage widens sharply with model size** — 2.2× for `base`,
+13.2× for `distil-large-v3`. The reason is visible in the T4 table: there,
+all three models cost about the same (0.036–0.046), because a 23 s clip
+does not saturate a T4 and fixed per-run overhead dominates. CPU has no such
+headroom, so cost tracks parameter count. Two consequences:
+
+- The T4 bench understates the real cost difference between model sizes.
+  Do not use it to reason about model selection.
+- Model choice matters far more on CPU than on GPU. On the T4, `large-v3`
+  costs 2.2× `base`; the CPU spread across a smaller set of models is
+  already 7.3×.
+
+`large-v3` was not benchmarked on CPU here — expected to be slow enough that
+it is a single-clip spot check only, not a realtime option. Untested rather
+than assumed.
 
 ## Config-change A/Bs
 

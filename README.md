@@ -96,14 +96,26 @@ concatenated LibriSpeech utterances with a ground-truth transcript. Raw logs
 and the full analysis are in [`docs/VALIDATION.md`](docs/VALIDATION.md);
 reproduce with [`notebooks/validate_t4.ipynb`](notebooks/validate_t4.ipynb).
 
-**Throughput** — decode only; model load is excluded.
+**Throughput** — decode only; model load is excluded. CPU column is an Apple
+M2 at `int8` on the same clip, measured the same day.
 
-| model | RTF | × realtime |
-|---|---|---|
-| base | 0.038 | 26.3 |
-| small | 0.036 | 27.8 |
-| distil-large-v3 | 0.046 | 21.7 |
-| large-v3 | 0.082 | 12.2 |
+| model | T4 `float16` RTF | × realtime | M2 CPU `int8` RTF | × realtime |
+|---|---|---|---|---|
+| base | 0.038 | 26.3 | 0.083 | 12.0 |
+| small | 0.036 | 27.8 | 0.205 | 4.9 |
+| distil-large-v3 | 0.046 | 21.7 | 0.605 | 1.7 |
+| large-v3 | 0.082 | 12.2 | not benchmarked | — |
+
+**A CPU-only machine runs this pipeline in realtime**: `small` at int8
+sustains 4.9× realtime on a laptop, and even `distil-large-v3` clears
+realtime at 1.7×. That matters more than the GPU column for a tool whose
+premise is local execution.
+
+Note the T4 column barely separates the first three models (0.036–0.046): a
+23 s clip does not saturate a T4, so fixed overhead dominates and the GPU
+bench *understates* the real cost difference between model sizes. The CPU
+column is the one to reason about model selection with — its spread across
+the same three models is 7.3×, against 1.2× on the T4.
 
 **Noise robustness** — white noise at a seeded SNR ladder, denoise off.
 
@@ -130,8 +142,9 @@ Two results went against expectations, and both are load-bearing:
   was supposed to help most. It stays off by default.
 
 Single clip, single speaker: WER differences below ~0.05 are not resolvable
-here. These characterize behavior and cost; they are not corpus benchmarks.
-CPU baseline on the 9950X and the Jetson Orin Nano numbers are still pending.
+here (RTF is steadier, ~2% run to run). These characterize behavior and
+cost; they are not corpus benchmarks. The 9950X server-CPU baseline and the
+Jetson Orin Nano numbers are still pending.
 
 ## Validation runbook
 
