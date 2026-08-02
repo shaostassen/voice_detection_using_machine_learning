@@ -89,8 +89,24 @@ def hardware_label() -> str:
                 return gpus[0] if len(gpus) == 1 else f"{len(gpus)}x {gpus[0]}"
         except Exception:
             pass
-    cpu = platform.processor() or platform.machine()
-    return f"{platform.system()} {platform.machine()} ({cpu})".strip()
+    # platform.processor() returns "arm" on macOS and "x86_64" on Linux —
+    # too generic to identify the box a number came from, which is the whole
+    # point of recording it. Ask the OS for the actual CPU model.
+    cpu = ""
+    try:
+        if platform.system() == "Darwin":
+            cpu = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                                 capture_output=True, text=True,
+                                 timeout=5).stdout.strip()
+        elif platform.system() == "Linux":
+            for line in Path("/proc/cpuinfo").read_text().splitlines():
+                if line.startswith("model name"):
+                    cpu = line.split(":", 1)[1].strip()
+                    break
+    except Exception:
+        pass
+    cpu = cpu or platform.processor() or platform.machine()
+    return f"{cpu} ({platform.system()} {platform.machine()})"
 
 
 def banner(study: str, args, model: str) -> tuple:
