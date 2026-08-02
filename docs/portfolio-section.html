@@ -1,0 +1,195 @@
+<!--
+  SpeechLens — portfolio content, source of truth.
+
+  This file is the canonical copy for the project's portfolio presence. The
+  live site (shaostassen.com, Next.js 15 + MDX) should pull its wording from
+  here; the CUT-marked blocks below are drop-in fragments for the legacy
+  single-file oscilloscope site.
+
+  RULE: the stat chips read "—" on purpose. No number appears here until a
+  real run in docs/VALIDATION.md produces it, with hardware / model /
+  compute_type / date attached. Do not fill them in from memory or estimate.
+-->
+<style>
+  .sl {
+    --sl-fg: #16181d;
+    --sl-muted: #5c6370;
+    --sl-line: #d9dde5;
+    --sl-accent: #2f6f4f;
+    --sl-chip-bg: #f4f6f9;
+    color: var(--sl-fg);
+    font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    max-width: 68ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    .sl {
+      --sl-fg: #e6e8ec;
+      --sl-muted: #9aa2b1;
+      --sl-line: #2b303a;
+      --sl-accent: #7fc9a2;
+      --sl-chip-bg: #171a20;
+    }
+  }
+  .sl h2 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 .25em; }
+  .sl h3 {
+    font-size: .78rem; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--sl-muted); margin: 2em 0 .6em; font-weight: 600;
+  }
+  .sl .sl-lede { color: var(--sl-muted); font-size: 1.05rem; margin: 0 0 1.5em; }
+  .sl-chips {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: .75rem; margin: 1.5em 0; padding: 0; list-style: none;
+  }
+  .sl-chip {
+    background: var(--sl-chip-bg); border: 1px solid var(--sl-line);
+    border-radius: .5rem; padding: .7rem .85rem;
+  }
+  .sl-chip b {
+    display: block; font-size: 1.45rem; font-weight: 650;
+    font-variant-numeric: tabular-nums; line-height: 1.1;
+  }
+  .sl-chip span {
+    display: block; font-size: .74rem; color: var(--sl-muted);
+    text-transform: uppercase; letter-spacing: .05em; margin-top: .3em;
+  }
+  .sl-chip[data-pending="true"] b { color: var(--sl-muted); }
+  .sl-readout {
+    border: 1px solid var(--sl-line); border-radius: .5rem;
+    padding: .35rem .9rem; margin: 1.2em 0; overflow-x: auto;
+  }
+  .sl-readout dl {
+    display: grid; grid-template-columns: 1fr auto; gap: .1rem 1.5rem;
+    margin: .6rem 0; font-size: .875rem;
+  }
+  .sl-readout dt { color: var(--sl-muted); }
+  .sl-readout dd {
+    margin: 0; text-align: right; font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .sl-note {
+    font-size: .85rem; color: var(--sl-muted);
+    border-left: 2px solid var(--sl-accent); padding-left: .9rem; margin: 1.5em 0;
+  }
+  .sl ul.sl-body { padding-left: 1.1rem; }
+  .sl ul.sl-body li { margin: .45em 0; }
+</style>
+
+<section class="sl">
+
+  <!-- CUT:HEADER -->
+  <h2>SpeechLens</h2>
+  <p class="sl-lede">
+    Local language identification and robust transcription. Point it at audio,
+    get back the language with a calibrated-ish probability, a transcript with
+    per-segment confidence, and an honest set of warnings — computed entirely
+    on your own hardware, with no cloud calls.
+  </p>
+  <!-- /CUT:HEADER -->
+
+  <!-- CUT:CONTEXT -->
+  <h3>Context</h3>
+  <p>
+    Whisper is easy to call and hard to trust. Left at library defaults it
+    hallucinates fluent text over silence and music, loops on itself, and
+    reports none of it — the output looks identical whether the model heard a
+    sentence or a fan. For anything unattended, a confident wrong transcript
+    is worse than no transcript.
+  </p>
+  <p>
+    The interesting engineering is therefore not the model. It is the harness
+    around it: deciding what is speech before decoding, deciding what language
+    it is without trusting a single window, and marking low-quality output
+    instead of silently passing it along.
+  </p>
+  <!-- /CUT:CONTEXT -->
+
+  <!-- CUT:APPROACH -->
+  <h3>Approach</h3>
+  <ul class="sl-body">
+    <li>
+      <b>VAD gating first.</b> Silero (ONNX, CPU) segments speech before the
+      decoder ever runs — the single largest anti-hallucination measure, since
+      the most reliable way to stop the model inventing words over noise is to
+      not hand it the noise. An energy-VAD fallback keeps the path alive if
+      the ONNX assets are unavailable.
+    </li>
+    <li>
+      <b>Chunk-voted language ID.</b> Rather than trusting one window, several
+      chunks each vote, and the distributions fuse as a <em>log-space
+      geometric mean</em>. The property that buys: two clean windows can veto
+      one corrupted window, because a near-zero probability anywhere drags the
+      fused score down multiplicatively rather than being averaged away.
+      Each vote costs an encoder pass only — the lazy segment generator is
+      deliberately never consumed.
+    </li>
+    <li>
+      <b>An explicit decode contract.</b> Every robustness knob lives in one
+      <code>RobustnessConfig</code> dataclass instead of scattered call sites,
+      so the decode behavior is inspectable, diffable, and testable rather
+      than a pile of implicit library defaults.
+    </li>
+    <li>
+      <b>Confidence that surfaces.</b> Per-segment confidence is
+      <code>exp(avg_logprob)</code> — the geometric mean token probability —
+      and anything under the threshold is flagged in the output schema, the
+      CLI, and the web UI. The design goal is that <em>flags rise before the
+      transcript goes bad</em>, which is the property the SNR sweep is built
+      to falsify.
+    </li>
+  </ul>
+  <!-- /CUT:APPROACH -->
+
+  <!-- CUT:READOUT -->
+  <h3>Decode harness</h3>
+  <div class="sl-readout">
+    <dl>
+      <dt>Beam size</dt><dd>5</dd>
+      <dt>Temperature fallback ladder</dt><dd>0.0 → 1.0</dd>
+      <dt>Compression-ratio gate (repetition loop)</dt><dd>2.4</dd>
+      <dt>Log-probability gate (low confidence)</dt><dd>−1.0</dd>
+      <dt>No-speech gate (phantom segments)</dt><dd>0.6</dd>
+      <dt>Condition on previous text</dt><dd>off</dd>
+      <dt>Segment flag threshold</dt><dd>0.55</dd>
+    </dl>
+  </div>
+  <p class="sl-note">
+    Context carry-over is off by design. It is the setting that makes Whisper
+    read fluently and the setting that lets one hallucinated segment condition
+    the next into agreeing with it. Error propagation is the worse failure.
+    These defaults are load-bearing: changing one requires an A/B on the SNR
+    sweep, recorded in the validation log.
+  </p>
+  <!-- /CUT:READOUT -->
+
+  <!-- CUT:RESULT -->
+  <h3>Result</h3>
+  <ul class="sl-chips">
+    <li class="sl-chip"><b>30</b><span>offline tests</span></li>
+    <li class="sl-chip"><b>0</b><span>weights to run them</span></li>
+    <li class="sl-chip" data-pending="true"><b>—</b><span>RTF · large-v3 · T4</span></li>
+    <li class="sl-chip" data-pending="true"><b>—</b><span>WER at −5 dB SNR</span></li>
+  </ul>
+  <p>
+    The suite runs in seconds with no network and no model weights, on every
+    push, across Python 3.11 and 3.12. That is a deliberate architectural
+    property, not a convenience: the pipeline takes its transcriber and
+    detector by injection, so the orchestration logic is testable without
+    three gigabytes of parameters. Anything that genuinely needs weights lives
+    in a separate validation harness and never in the test suite.
+  </p>
+  <p>
+    Three interfaces sit on the one pipeline — a Python API, a CLI, and a
+    FastAPI service with a single-page web UI — and the whole thing holds a
+    hard dependency ceiling: no torch.
+  </p>
+  <p class="sl-note">
+    The two pending chips stay em dashes until a measured run fills them in.
+    Every number this project publishes carries the hardware, model,
+    <code>compute_type</code>, and date that produced it; authoritative
+    figures come from a cloud T4 running <code>large-v3</code> at
+    <code>float16</code>, since no development machine here has an NVIDIA GPU.
+    An unsourced number is a bug.
+  </p>
+  <!-- /CUT:RESULT -->
+
+</section>
