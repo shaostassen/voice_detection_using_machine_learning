@@ -11,6 +11,10 @@ Three studies:
           falling SNR; reports WER/CER, LID stability, and flagged-segment
           counts per level. Run with and without --denoise to A/B it.
 
+  gate    Confidence-gate diagnosis. Runs the same SNR ladder but prints the
+          per-segment confidence distribution and the flag count at several
+          candidate thresholds, to find one whose flags lead the errors.
+
   bench   Real-time factor across model sizes on one file.
 
 Every run prints a provenance banner (hardware / model / device / compute_type
@@ -175,6 +179,65 @@ def cmd_snr(args) -> None:
               f"{r.transcript['flagged_segments']:>8}")
 
 
+CANDIDATE_THRESHOLDS = (0.55, 0.65, 0.75, 0.85, 0.95)
+
+
+def cmd_gate(args) -> None:
+    """Diagnose the confidence gate against the SNR ladder.
+
+    The 2026-08-02 sweep flagged zero segments at every noise level, including
+    -5 dB where a third of the words were wrong. The count alone cannot say
+    whether the threshold is merely too low or whether avg_logprob is too flat
+    to threshold at all, so this prints the underlying distribution.
+
+    Flagging is applied post-hoc to avg_logprob, so every candidate threshold
+    is evaluated on one decode pass rather than re-decoding per threshold.
+    """
+    banner("gate", args, args.model)
+    lens = SpeechLens(model_size=args.model, device=args.device,
+                      compute_type=args.compute_type)
+    clean, sr = load_audio(args.audio)
+    rng = np.random.default_rng(0)          # same stream as cmd_snr
+    levels = [None, 20, 10, 5, 0, -5]
+
+    print("per-level confidence distribution "
+          "(conf = exp(avg_logprob), the flagging signal)")
+    print(f"{'SNR dB':>7} {'segs':>5} {'conf min':>9} {'conf mean':>10} "
+          f"{'conf max':>9} {'nospeech':>9} {'lid p':>6} {'err':>6}")
+
+    per_level = []
+    for snr in levels:
+        y = clean if snr is None else mix_at_snr(clean, snr, rng)
+        r = lens.analyze((y, sr))
+        segs = r.transcript["segments"]
+        confs = [s["confidence"] for s in segs] or [float("nan")]
+        nosp = max((s["no_speech_prob"] for s in segs), default=float("nan"))
+        if args.ref:
+            _metric, err = error_rate(args.ref, r.text,
+                                      language=r.language["code"])
+        else:
+            err = float("nan")
+        label = "clean" if snr is None else str(snr)
+        print(f"{label:>7} {len(segs):>5} {min(confs):>9.3f} "
+              f"{sum(confs) / len(confs):>10.3f} {max(confs):>9.3f} "
+              f"{nosp:>9.3f} {r.language['probability']:>6.2f} {err:>6.2f}")
+        per_level.append((label, confs, err))
+
+    header = "  ".join(f"t={t:.2f}" for t in CANDIDATE_THRESHOLDS)
+    print(f"\nflagged segments / total, by candidate threshold\n"
+          f"{'SNR dB':>7} {'err':>6}  {header}")
+    for label, confs, err in per_level:
+        cells = "  ".join(
+            f"{sum(1 for c in confs if c < t):>2}/{len(confs):<3}"
+            for t in CANDIDATE_THRESHOLDS)
+        print(f"{label:>7} {err:>6.2f}  {cells}")
+
+    print("\nRead this as: a usable threshold is one whose flag count climbs "
+          "*before*\nthe error rate does. A column that is all-zero or "
+          "all-flagged is useless —\nthe first cannot warn, the second cries "
+          "wolf on clean audio.")
+
+
 def cmd_bench(args) -> None:
     banner("bench", args, args.models)
     clean, sr = load_audio(args.audio)
@@ -216,6 +279,15 @@ def main() -> None:
     n.add_argument("--model", default="large-v3")
     n.add_argument("--denoise", action="store_true")
     n.set_defaults(func=cmd_snr)
+
+    g = sub.add_parser("gate", parents=[common],
+                       help="diagnose the confidence gate on the SNR ladder")
+    g.add_argument("audio")
+    g.add_argument("--ref", default=None,
+                   help="reference transcript, so flags can be compared "
+                        "against the error rate they are supposed to lead")
+    g.add_argument("--model", default="large-v3")
+    g.set_defaults(func=cmd_gate)
 
     b = sub.add_parser("bench", parents=[common],
                        help="RTF across model sizes")
