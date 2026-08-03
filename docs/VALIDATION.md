@@ -16,6 +16,10 @@ not a reconstruction. Raw stdout for each run is kept verbatim in
 | Ryzen 9 9950X, 32 threads, `int8` | Server-CPU baseline — **not yet run** | same command |
 | Jetson Orin Nano | Edge target; GPU path unverified (needs a ctranslate2 CUDA build for JetPack) | pending |
 
+`scripts/make_clip.py` rebuilds the canonical 23.2 s clip identically on any
+machine. Use it before benching new hardware — a bench on a different clip
+is a different measurement, not a comparison.
+
 ---
 
 # Run — 2026-08-02 — Tesla T4
