@@ -335,6 +335,31 @@ Also worth noting: **LID probability tracked degradation too** (1.00 →
 gate looked broken. It is no longer needed for this purpose, but it is a
 second, cheaper indicator of the same thing.
 
+### Confirmation — the gate working in the live pipeline
+
+Re-ran the full SNR sweep with `low_confidence = 0.85` in place, same clip,
+same seeded noise ladder. Raw log:
+[`validation_runs/snr_9950x_t085.txt`](validation_runs/snr_9950x_t085.txt).
+
+| SNR dB | lang | p | WER | flagged |
+|---|---|---|---|---|
+| clean | en | 1.00 | 0.05 | 0 |
+| 20 | en | 1.00 | 0.05 | 0 |
+| 10 | en | 1.00 | 0.03 | 0 |
+| 5 | en | 0.99 | 0.05 | 0 |
+| 0 | en | 0.96 | 0.15 | **4** |
+| −5 | en | 0.82 | 0.33 | **4** |
+
+The flagged column now separates the usable transcripts from the degraded
+ones exactly where the error rate steps up, which is what the gate was
+supposed to do from the beginning. This supersedes the flagged column in
+the 2026-08-02 T4 sweep, which ran under the inert threshold.
+
+(WER here is marginally different from the T4 run — 0.05 vs 0.03 on clean —
+because this is `int8` on CPU rather than `float16`. A ~0.02 difference on
+one clip is inside the noise floor of this measurement, not a quantization
+finding.)
+
 ## Config-change A/Bs
 
 `RobustnessConfig` defaults are load-bearing (VAD on, context carry off,
@@ -348,10 +373,6 @@ temp ladder 0→1.0, CR gate 2.4, logprob gate −1.0, no-speech 0.6, flag
 
 ## Open items
 
-- **Re-run the SNR sweep at the new 0.85 threshold.** The recorded sweep
-  above shows `flagged = 0` throughout because it ran under the old, inert
-  0.55. The gate study supersedes it for the flagging question, but the SNR
-  table's flagged column is stale by construction.
 - **Confirm 0.85 beyond one clip** — accents, spontaneous speech, non-English.
   0.55 is refuted everywhere; 0.85 is only established here.
 - Broader corpus (LibriSpeech test-clean/test-other, FLEURS) before any of

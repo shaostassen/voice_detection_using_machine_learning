@@ -83,7 +83,7 @@ re-decoded hotter whenever `compression_ratio > 2.4` (repetition loop) or
 `avg_logprob < -1.0` (garbage). `condition_on_previous_text=False` trades a
 little cross-segment consistency for zero error propagation on hard audio.
 `no_speech_threshold=0.6` suppresses phantom segments. Segments whose
-`exp(avg_logprob)` falls below `low_confidence=0.55` are flagged, not hidden.
+`exp(avg_logprob)` falls below `low_confidence=0.85` are flagged, not hidden.
 `initial_prompt` biases decoding toward domain vocabulary (product names,
 jargon). The optional `--denoise` stage is deliberately off by default —
 Whisper is trained on noisy audio and spectral gating can smear formants;
@@ -119,27 +119,34 @@ grows: 1.8× at `small`, 3.2× at `large-v3`. Consequently the GPU bench
 *understates* the cost difference between model sizes — reason about model
 selection from the CPU columns, where the spread is 9× rather than 2×.
 
-**Noise robustness** — white noise at a seeded SNR ladder, denoise off.
+**Noise robustness** — white noise at a seeded SNR ladder, denoise off,
+`large-v3` int8 on the 9950X at the current flag threshold.
 
 | SNR dB | lang | p | WER | flagged |
 |---|---|---|---|---|
-| clean | en | 1.00 | 0.03 | 0 |
+| clean | en | 1.00 | 0.05 | 0 |
 | 20 | en | 1.00 | 0.05 | 0 |
 | 10 | en | 1.00 | 0.03 | 0 |
-| 5 | en | 1.00 | 0.05 | 0 |
-| 0 | en | 0.97 | 0.15 | 0 |
-| −5 | en | 0.77 | 0.33 | 0 |
+| 5 | en | 0.99 | 0.05 | 0 |
+| 0 | en | 0.96 | 0.15 | 4 |
+| −5 | en | 0.82 | 0.33 | 4 |
 
 Language ID held `en` across the entire ladder (chunk-voted LID, 5/5 on the
-multilingual smoke study including Mandarin), and WER degraded smoothly
-rather than collapsing into hallucinated text.
+multilingual smoke study including Mandarin), WER degraded smoothly rather
+than collapsing into hallucinated text, and the confidence gate stays silent
+while WER ≤ 0.05 then flags every segment once it steps to 0.15.
 
 Two results went against expectations, and both are load-bearing:
 
-- **The confidence gate never fired.** Zero flagged segments at every level,
-  including −5 dB where a third of the words are wrong — `large-v3` remains
-  confident while incorrect, so `exp(avg_logprob)` never crosses 0.55. The
-  gate is unexercised, not validated. Threshold sweep is an open item.
+- **The confidence gate was inert, and the obvious diagnosis was wrong.**
+  The first sweep flagged nothing at any level, including −5 dB. That reads
+  like `avg_logprob` being a useless signal; measuring the distribution
+  showed the opposite — confidence falls 0.957 → 0.669, tracking WER
+  closely. The threshold, 0.55, was simply *below the worst value the model
+  ever produces*, so it could never fire. Raised to 0.85 with the A/B in
+  [`docs/VALIDATION.md`](docs/VALIDATION.md); the table above is the
+  re-run. An inert gate is worse than none — it implies a safety net that
+  isn't there.
 - **`--denoise` lost at every SNR**, by +0.02 to +0.15 WER, worst where it
   was supposed to help most. It stays off by default.
 
@@ -162,7 +169,10 @@ Model-level validation on a GPU box:
 python scripts/validate.py smoke                       # multilingual TTS round-trip: LID + plumbing
 python scripts/validate.py snr clip.wav --ref "known transcript"   # WER/CER vs SNR ladder
 python scripts/validate.py snr clip.wav --ref "..." --denoise      # A/B the denoise stage
+python scripts/validate.py gate clip.wav --ref "..."               # confidence distribution vs flag thresholds
 python scripts/validate.py bench clip.wav --models small,distil-large-v3,large-v3
+
+python scripts/make_clip.py clip.wav    # rebuild the canonical labeled clip first
 ```
 
 Every run prints a provenance banner — hardware, model, device,

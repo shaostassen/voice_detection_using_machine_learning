@@ -149,7 +149,7 @@
       <dt>Log-probability gate (low confidence)</dt><dd>−1.0</dd>
       <dt>No-speech gate (phantom segments)</dt><dd>0.6</dd>
       <dt>Condition on previous text</dt><dd>off</dd>
-      <dt>Segment flag threshold</dt><dd>0.55</dd>
+      <dt>Segment flag threshold</dt><dd>0.85</dd>
     </dl>
   </div>
   <p class="sl-note">
@@ -198,17 +198,22 @@
   <h3>What the measurements refuted</h3>
   <p>
     Two of the harness's design assumptions did not survive contact with the
-    sweep, which is the point of running it.
+    sweep, which is the point of running it. An inert safety net is worse
+    than none — it implies a guarantee that is not there — so both of these
+    mattered more than the throughput numbers.
   </p>
   <ul class="sl-body">
     <li>
-      <b>The confidence gate never fired.</b> Flagged-segment count was zero
-      at every noise level — including −5 dB, where one word in three is
-      wrong. <code>large-v3</code> stays confident while being incorrect, so
-      <code>exp(avg_logprob)</code> never crosses the 0.55 threshold. The
-      gate is not validated; it is unexercised, which is the weaker result.
-      Open follow-up: sweep the threshold, or move to a signal that actually
-      tracked degradation — the LID probability did.
+      <b>The confidence gate was inert, and the fix was not the obvious
+      one.</b> Flagged-segment count was zero at every noise level, including
+      −5 dB where one word in three is wrong. The tempting read is that
+      <code>avg_logprob</code> is a bad signal. Measuring the distribution
+      instead of the flag count showed the opposite: confidence falls
+      monotonically with noise, 0.957 → 0.669, tracking the error rate
+      closely. The signal was fine. The threshold — 0.55 — sat <em>below the
+      worst value the model ever produced</em>, so it could not fire under
+      any condition. Raised to 0.85, which stays silent while word error is
+      ≤ 5% and fires the moment it reaches 15%.
     </li>
     <li>
       <b>The optional denoise stage made things worse.</b> Spectral gating

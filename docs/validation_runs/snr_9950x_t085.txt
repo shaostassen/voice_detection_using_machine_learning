@@ -1,0 +1,11 @@
+study=snr  hardware=AMD Ryzen 9 9950X 16-Core Processor (Linux x86_64)  model=large-v3  device=cpu  compute_type=int8  date=2026-08-03
+cmd: python scripts/validate.py snr /tmp/clip.wav --ref 'MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL NOR IS MISTER QUILTER'"'"'S MANNER LESS INTERESTING THAN HIS MATTER HE TELLS US THAT AT THIS FESTIVE SEASON OF THE YEAR WITH CHRISTMAS AND ROAST BEEF LOOMING BEFORE US SIMILES DRAWN FROM EATING AND ITS RESULTS OCCUR MOST READILY TO THE MIND' --model large-v3 --device cpu --compute-type int8
+
+model=large-v3
+ SNR dB  lang     p  metric    err  flagged
+  clean    en  1.00     wer   0.05        0
+     20    en  1.00     wer   0.05        0
+     10    en  1.00     wer   0.03        0
+      5    en  0.99     wer   0.05        0
+      0    en  0.96     wer   0.15        4
+     -5    en  0.82     wer   0.33        4
