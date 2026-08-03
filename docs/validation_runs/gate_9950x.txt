@@ -1,0 +1,24 @@
+study=gate  hardware=AMD Ryzen 9 9950X 16-Core Processor (Linux x86_64)  model=large-v3  device=cpu  compute_type=int8  date=2026-08-03
+cmd: python scripts/validate.py gate /tmp/clip.wav --ref 'MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL NOR IS MISTER QUILTER'"'"'S MANNER LESS INTERESTING THAN HIS MATTER HE TELLS US THAT AT THIS FESTIVE SEASON OF THE YEAR WITH CHRISTMAS AND ROAST BEEF LOOMING BEFORE US SIMILES DRAWN FROM EATING AND ITS RESULTS OCCUR MOST READILY TO THE MIND' --model large-v3 --device cpu --compute-type int8
+
+per-level confidence distribution (conf = exp(avg_logprob), the flagging signal)
+ SNR dB  segs  conf min  conf mean  conf max  nospeech  lid p    err
+  clean     2     0.957      0.957     0.957     0.000   1.00   0.05
+     20     2     0.945      0.945     0.945     0.008   1.00   0.05
+     10     2     0.943      0.943     0.943     0.009   1.00   0.03
+      5     4     0.886      0.886     0.886     0.030   0.99   0.05
+      0     4     0.817      0.817     0.817     0.052   0.96   0.15
+     -5     4     0.669      0.669     0.669     0.042   0.82   0.33
+
+flagged segments / total, by candidate threshold
+ SNR dB    err  t=0.55  t=0.65  t=0.75  t=0.85  t=0.95
+  clean   0.05   0/2     0/2     0/2     0/2     0/2  
+     20   0.05   0/2     0/2     0/2     0/2     2/2  
+     10   0.03   0/2     0/2     0/2     0/2     2/2  
+      5   0.05   0/4     0/4     0/4     0/4     4/4  
+      0   0.15   0/4     0/4     0/4     4/4     4/4  
+     -5   0.33   0/4     0/4     4/4     4/4     4/4  
+
+Read this as: a usable threshold is one whose flag count climbs *before*
+the error rate does. A column that is all-zero or all-flagged is useless —
+the first cannot warn, the second cries wolf on clean audio.

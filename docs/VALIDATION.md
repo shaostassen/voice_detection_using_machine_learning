@@ -268,6 +268,73 @@ Practical consequence: for this workload the 9950X is the sensible default
 target. The T4 is worth it for `large-v3` throughput; below that it buys
 little, and for `base` it loses.
 
+---
+
+# Run — 2026-08-03 — confidence-gate diagnosis (`gate` study)
+
+| field | value |
+|---|---|
+| hardware | AMD Ryzen 9 9950X 16-Core (32 threads), Linux x86_64 |
+| model | `large-v3` |
+| compute_type | `int8` |
+| audio source | the same byte-identical 23.2 s labeled clip |
+| raw log | [`validation_runs/gate_9950x.txt`](validation_runs/gate_9950x.txt) |
+
+The 2026-08-02 sweep flagged zero segments at every level. A count alone
+cannot say whether the threshold was too low or the signal was flat, so this
+study prints the underlying `exp(avg_logprob)` distribution. Flagging is
+post-hoc, so all candidate thresholds are evaluated on one decode pass.
+
+| SNR dB | segs | confidence | no-speech | LID p | WER |
+|---|---|---|---|---|---|
+| clean | 2 | 0.957 | 0.000 | 1.00 | 0.05 |
+| 20 | 2 | 0.945 | 0.008 | 1.00 | 0.05 |
+| 10 | 2 | 0.943 | 0.009 | 1.00 | 0.03 |
+| 5 | 4 | 0.886 | 0.030 | 0.99 | 0.05 |
+| 0 | 4 | 0.817 | 0.052 | 0.96 | 0.15 |
+| −5 | 4 | 0.669 | 0.042 | 0.82 | 0.33 |
+
+Flagged segments / total, by candidate threshold:
+
+| SNR dB | WER | t=0.55 | t=0.65 | t=0.75 | t=0.85 | t=0.95 |
+|---|---|---|---|---|---|---|
+| clean | 0.05 | 0/2 | 0/2 | 0/2 | 0/2 | 0/2 |
+| 20 | 0.05 | 0/2 | 0/2 | 0/2 | 0/2 | 2/2 |
+| 10 | 0.03 | 0/2 | 0/2 | 0/2 | 0/2 | 2/2 |
+| 5 | 0.05 | 0/4 | 0/4 | 0/4 | 0/4 | 4/4 |
+| 0 | 0.15 | 0/4 | 0/4 | 0/4 | 4/4 | 4/4 |
+| −5 | 0.33 | 0/4 | 0/4 | 4/4 | 4/4 | 4/4 |
+
+### Verdict — the signal was fine, the threshold was wrong
+
+**`avg_logprob` is not flat.** Confidence falls monotonically with noise,
+0.957 → 0.669, tracking WER closely. The earlier worry that it might be
+unusable as a signal is settled: it is usable.
+
+**0.55 was below the worst case.** The lowest confidence observed anywhere,
+at 33% WER, was 0.669. A threshold of 0.55 could not fire under any
+condition in this sweep — it was not a conservative gate, it was an inert
+one, which is worse than none because it implies a safety net that is not
+there.
+
+**0.85 is the value that works.** It stays silent through the whole region
+where WER ≤ 0.05 (clean, 20, 10, 5 dB) and fires the moment WER climbs to
+0.15 at 0 dB, staying on at −5 dB. t=0.75 only fires at −5 dB, by which
+point a third of the words are already wrong. t=0.95 flags clean-ish audio
+at 20 dB where WER is 0.05 — it cries wolf.
+
+**Two honest limitations.** (1) Confidence min = mean = max at every level:
+segments decoded from the same window share an `avg_logprob`, so this is
+effectively one reading per level, not a distribution — the threshold is
+chosen from 6 points. (2) One clip, one speaker, read English. A default
+should hold across accents, spontaneous speech, and other languages;
+this shows 0.85 is right *here* and that 0.55 is wrong *everywhere*.
+
+Also worth noting: **LID probability tracked degradation too** (1.00 →
+0.82), independently confirming it as the fallback signal proposed when the
+gate looked broken. It is no longer needed for this purpose, but it is a
+second, cheaper indicator of the same thing.
+
 ## Config-change A/Bs
 
 `RobustnessConfig` defaults are load-bearing (VAD on, context carry off,
@@ -277,13 +344,17 @@ temp ladder 0→1.0, CR gate 2.4, logprob gate −1.0, no-speech 0.6, flag
 | date | knob | from → to | effect on WER / flags | verdict |
 |---|---|---|---|---|
 | 2026-08-02 | `denoise` | off → on | WER +0.02 to +0.15, worst at low SNR; LID p 0.77 → 0.63 at −5 dB | **rejected**, keep off |
-| — | `low_confidence` (0.55) | — | open: gate never fired across the whole ladder | needs a threshold sweep |
+| 2026-08-03 | `low_confidence` | 0.55 → **0.85** | 0.55 flagged 0/18 segments across the ladder incl. 33% WER; 0.85 flags 0 while WER ≤ 0.05 and 8/8 once WER ≥ 0.15 | **adopted** |
 
 ## Open items
 
-- **`low_confidence` threshold sweep** — the gate did not fire at any SNR;
-  it cannot be described as working until this is resolved.
-- **Jetson Orin Nano** — ctranslate2 CUDA build for JetPack unattempted.
+- **Re-run the SNR sweep at the new 0.85 threshold.** The recorded sweep
+  above shows `flagged = 0` throughout because it ran under the old, inert
+  0.55. The gate study supersedes it for the flagging question, but the SNR
+  table's flagged column is stale by construction.
+- **Confirm 0.85 beyond one clip** — accents, spontaneous speech, non-English.
+  0.55 is refuted everywhere; 0.85 is only established here.
 - Broader corpus (LibriSpeech test-clean/test-other, FLEURS) before any of
   these WER figures are described as benchmark results rather than
   characterization of one clip.
+- ~~Jetson Orin Nano~~ — **descoped by Shao 2026-08-03.**

@@ -25,7 +25,12 @@ class RobustnessConfig:
     vad_min_silence_ms: int = 300
     word_timestamps: bool = False
     initial_prompt: Optional[str] = None       # domain-vocabulary biasing
-    low_confidence: float = 0.55               # segment flagging threshold
+    # Segment flagging threshold. Was 0.55, which could never fire: the
+    # 2026-08-03 gate sweep (docs/VALIDATION.md) measured large-v3 confidence
+    # bottoming out at 0.669 with 33% WER, so 0.55 sat below the worst case
+    # and flagged nothing at any noise level. 0.85 is the value that stays
+    # silent while WER <= 0.05 and fires once it climbs to 0.15.
+    low_confidence: float = 0.85
 
 
 @dataclass
