@@ -13,7 +13,7 @@ not a reconstruction. Raw stdout for each run is kept verbatim in
 |---|---|---|
 | Free cloud T4 (Colab/Kaggle), `large-v3`, `float16` | **Authoritative numbers.** No local NVIDIA GPU exists on any dev machine. | `notebooks/validate_t4.ipynb` |
 | MacBook Pro M2, `int8` | **CPU baseline** — measured 2026-08-02, same clip as the T4 run | `scripts/validate.py bench --device cpu --compute-type int8` |
-| Ryzen 9 9950X, 32 threads, `int8` | Server-CPU baseline — **not yet run** | same command |
+| Ryzen 9 9950X, 32 threads, `int8` | **Server-CPU baseline** — measured 2026-08-03, byte-identical clip | same command |
 | Jetson Orin Nano | Edge target; GPU path unverified (needs a ctranslate2 CUDA build for JetPack) | pending |
 
 `scripts/make_clip.py` rebuilds the canonical 23.2 s clip identically on any
@@ -224,6 +224,50 @@ headroom, so cost tracks parameter count. Two consequences:
 it is a single-clip spot check only, not a realtime option. Untested rather
 than assumed.
 
+---
+
+# Run — 2026-08-03 — Ryzen 9 9950X (server CPU baseline)
+
+| field | value |
+|---|---|
+| hardware | AMD Ryzen 9 9950X 16-Core (32 threads), Linux x86_64 |
+| model | `base`, `small`, `distil-large-v3`, `large-v3` |
+| compute_type | `int8` |
+| device | `cpu` |
+| audio source | **byte-identical to the T4 and M2 clip** (sha256 `7bbf2ddf3d0f767d…`, built by `scripts/make_clip.py`) |
+| raw log | [`validation_runs/bench_cpu_9950x.txt`](validation_runs/bench_cpu_9950x.txt) |
+
+| model | RTF | × realtime | vs M2 | vs T4 |
+|---|---|---|---|---|
+| base | 0.028 | 35.7 | 3.0× faster | **1.4× faster than the T4** |
+| small | 0.063 | 15.9 | 3.3× faster | 1.8× slower |
+| distil-large-v3 | 0.160 | 6.2 | 3.8× faster | 3.5× slower |
+| large-v3 | 0.259 | 3.9 | not run on M2 | 3.2× slower |
+
+### What the server baseline says
+
+**1. `large-v3` on CPU is realtime-viable — 3.9× realtime.** This was
+recorded as untested, with a standing assumption that it "runs but slowly,
+single-clip spot checks only". That assumption is now refuted: a 23 s clip
+decodes in about 6 s on the 9950X. The full sweep on CPU at `large-v3` is
+practical, not just a spot check.
+
+**2. The 9950X beats the T4 on `base` (0.028 vs 0.038).** A CPU beating a
+GPU looks wrong until you look at the T4 column: every model there costs
+0.036–0.082 regardless of size, because a 23 s clip never saturates the
+device and fixed overhead dominates. The T4's real advantage shows up only
+as the model grows — 1.8× at `small`, 3.2× at `large-v3`. For short clips
+and small models, the GPU is mostly waiting.
+
+**3. Thread count does scale.** 3.0–3.8× over the M2 across the three
+shared models. CTranslate2 int8 is getting real work out of 32 threads
+rather than being memory-bound, and the advantage grows with model size,
+which is the expected shape if compute rather than bandwidth is the limit.
+
+Practical consequence: for this workload the 9950X is the sensible default
+target. The T4 is worth it for `large-v3` throughput; below that it buys
+little, and for `base` it loses.
+
 ## Config-change A/Bs
 
 `RobustnessConfig` defaults are load-bearing (VAD on, context carry off,
@@ -237,7 +281,6 @@ temp ladder 0→1.0, CR gate 2.4, logprob gate −1.0, no-speech 0.6, flag
 
 ## Open items
 
-- **CPU baseline** on the 9950X (task 4) — not yet run.
 - **`low_confidence` threshold sweep** — the gate did not fire at any SNR;
   it cannot be described as working until this is resolved.
 - **Jetson Orin Nano** — ctranslate2 CUDA build for JetPack unattempted.

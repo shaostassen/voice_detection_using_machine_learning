@@ -172,9 +172,11 @@
   <p>
     On a free-tier Tesla T4, <code>large-v3</code> at <code>float16</code>
     decodes at RTF 0.082 — 12.2× faster than realtime. The number that
-    matters more for a tool built to run locally: on an Apple M2 with no GPU
-    at all, <code>small</code> at <code>int8</code> holds 4.9× realtime, and
-    <code>distil-large-v3</code> still clears realtime at 1.7×.
+    matters more for a tool built to run locally: no GPU is required at all.
+    On a Ryzen 9 9950X, <code>large-v3</code> at <code>int8</code> still
+    runs at 3.9× realtime and <code>small</code> at 15.9× — and on
+    <code>base</code> the CPU actually beats the T4 (0.028 vs 0.038),
+    because a 23-second clip never saturates the GPU.
     Under white noise the transcript degrades gracefully rather than falling
     off a cliff: 3% word error on clean audio, 33% at −5 dB SNR, with the
     language still correctly identified at every step of the ladder. Chunk

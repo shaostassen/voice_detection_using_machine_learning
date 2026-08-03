@@ -96,26 +96,28 @@ concatenated LibriSpeech utterances with a ground-truth transcript. Raw logs
 and the full analysis are in [`docs/VALIDATION.md`](docs/VALIDATION.md);
 reproduce with [`notebooks/validate_t4.ipynb`](notebooks/validate_t4.ipynb).
 
-**Throughput** — decode only; model load is excluded. CPU column is an Apple
-M2 at `int8` on the same clip, measured the same day.
+**Throughput** — RTF, decode only; model load is excluded. All three
+columns ran on the byte-identical clip.
 
-| model | T4 `float16` RTF | × realtime | M2 CPU `int8` RTF | × realtime |
-|---|---|---|---|---|
-| base | 0.038 | 26.3 | 0.083 | 12.0 |
-| small | 0.036 | 27.8 | 0.205 | 4.9 |
-| distil-large-v3 | 0.046 | 21.7 | 0.605 | 1.7 |
-| large-v3 | 0.082 | 12.2 | not benchmarked | — |
+| model | T4 `float16` | Ryzen 9 9950X `int8` | Apple M2 `int8` |
+|---|---|---|---|
+| base | 0.038 (26.3×) | **0.028 (35.7×)** | 0.083 (12.0×) |
+| small | 0.036 (27.8×) | 0.063 (15.9×) | 0.205 (4.9×) |
+| distil-large-v3 | 0.046 (21.7×) | 0.160 (6.2×) | 0.605 (1.7×) |
+| large-v3 | 0.082 (12.2×) | 0.259 (3.9×) | not benchmarked |
 
-**A CPU-only machine runs this pipeline in realtime**: `small` at int8
-sustains 4.9× realtime on a laptop, and even `distil-large-v3` clears
-realtime at 1.7×. That matters more than the GPU column for a tool whose
-premise is local execution.
+**No GPU is required.** `large-v3` runs at 3.9× realtime on a desktop CPU
+and `small` at 15.9×; even a laptop clears realtime on everything through
+`distil-large-v3`. For a tool whose premise is local execution, that is the
+load-bearing result.
 
-Note the T4 column barely separates the first three models (0.036–0.046): a
-23 s clip does not saturate a T4, so fixed overhead dominates and the GPU
-bench *understates* the real cost difference between model sizes. The CPU
-column is the one to reason about model selection with — its spread across
-the same three models is 7.3×, against 1.2× on the T4.
+Two things worth reading off this table. The 9950X **beats the T4 on
+`base`** — not because the CPU is faster, but because a 23 s clip never
+saturates a T4, so every model there costs 0.036–0.082 regardless of size
+and fixed overhead dominates. The GPU's advantage only appears as the model
+grows: 1.8× at `small`, 3.2× at `large-v3`. Consequently the GPU bench
+*understates* the cost difference between model sizes — reason about model
+selection from the CPU columns, where the spread is 9× rather than 2×.
 
 **Noise robustness** — white noise at a seeded SNR ladder, denoise off.
 
@@ -143,8 +145,8 @@ Two results went against expectations, and both are load-bearing:
 
 Single clip, single speaker: WER differences below ~0.05 are not resolvable
 here (RTF is steadier, ~2% run to run). These characterize behavior and
-cost; they are not corpus benchmarks. The 9950X server-CPU baseline and the
-Jetson Orin Nano numbers are still pending.
+cost; they are not corpus benchmarks. Jetson Orin Nano numbers are still
+pending.
 
 ## Validation runbook
 

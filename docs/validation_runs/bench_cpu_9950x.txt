@@ -1,0 +1,9 @@
+study=bench  hardware=AMD Ryzen 9 9950X 16-Core Processor (Linux x86_64)  model=base,small,distil-large-v3,large-v3  device=cpu  compute_type=int8  date=2026-08-03
+cmd: python scripts/validate.py bench /tmp/clip.wav --models base,small,distil-large-v3,large-v3 --device cpu --compute-type int8
+
+audio: 23.2s
+               model      rtf  x realtime
+                base    0.028        35.7
+               small    0.063        15.9
+     distil-large-v3    0.160         6.2
+            large-v3    0.259         3.9
