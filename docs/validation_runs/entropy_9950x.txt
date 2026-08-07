@@ -1,0 +1,35 @@
+study=entropy  hardware=AMD Ryzen 9 9950X 16-Core Processor (Linux x86_64)  model=large-v3  device=cpu  compute_type=int8  date=2026-08-07
+cmd: python scripts/entropy_study.py --model large-v3 --device cpu --compute-type int8 --limit 73
+
+NOTE: greedy decode (beam_size=1). CTranslate2 returns no logits under beam
+search, so these are not comparable to the beam-5 reliability study; the
+estimators here are all measured on the same greedy decode.
+
+corpus: 73 utterances, 8.0 min
+
+  clean dB  wer=0.038  words=1149
+     20 dB  wer=0.046  words=1152
+     10 dB  wer=0.068  words=1151
+      5 dB  wer=0.121  words=1154
+      0 dB  wer=0.293  words=1178
+     -5 dB  wer=0.684  words=1217
+
+================================================================================================
+WITHIN-CONDITION AUROC — probability vs entropy, same greedy decode
+================================================================================================
+ SNR dB    wer        word_prob    word_min_prob       entropy_h1       entropy_h2   entropy_min_h2
+  clean  0.038            0.882            0.889            0.887            0.883            0.890
+     20  0.046            0.867            0.875            0.868            0.868            0.874
+     10  0.068            0.855            0.861            0.857            0.857            0.863
+      5  0.121            0.859            0.866            0.852            0.859            0.864
+      0  0.293            0.834            0.835            0.833            0.835            0.835
+     -5  0.684            0.811            0.815            0.813            0.815            0.816
+
+AUC-NT (precision/recall for errors)
+ SNR dB  chance        word_prob    word_min_prob       entropy_h1       entropy_h2   entropy_min_h2
+  clean   0.036            0.249            0.274            0.215            0.230            0.291
+     20   0.043            0.294            0.374            0.298            0.301            0.357
+     10   0.063            0.356            0.426            0.376            0.388            0.444
+      5   0.111            0.464            0.502            0.446            0.464            0.490
+      0   0.261            0.673            0.670            0.663            0.673            0.666
+     -5   0.608            0.843            0.850            0.850            0.848            0.852

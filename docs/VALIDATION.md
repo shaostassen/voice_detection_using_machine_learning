@@ -504,6 +504,81 @@ calibration layer must be conditioned on noise level, not fitted globally.
    is a structural blind spot of every per-word confidence signal, not a
    defect of this one.
 
+---
+
+# Run — 2026-08-07 — entropy vs probability: does the better estimator exist?
+
+| field | value |
+|---|---|
+| hardware | AMD Ryzen 9 9950X 16-Core (32 threads), Linux x86_64 |
+| model | `large-v3`, `int8`, **greedy** (see constraint below) |
+| corpus | the same 73 utterances, ~1,150 words per condition |
+| script | [`scripts/entropy_study.py`](../scripts/entropy_study.py) |
+| raw log | [`validation_runs/entropy_9950x.txt`](validation_runs/entropy_9950x.txt) |
+
+The confidence literature reports entropy-based estimators detecting incorrect
+words **1.5–4× better** than probability-based ones at no extra compute
+([arXiv:2212.08703](https://arxiv.org/abs/2212.08703), SLT 2022) — but for CTC
+and transducer models. Whisper's decoder mixes acoustic and language-model
+evidence in a way CTC's does not, so it does not follow.
+
+**Constraint, established by spike before the study was written:** CTranslate2
+exposes full per-step distributions via `return_logits_vocab`, so entropy
+needs no torch — but only under **greedy** decoding. With `beam_size > 1` the
+field returns NULL. Production uses beam-5, so these numbers are not
+comparable to the beam-5 reliability study above; within this table every
+estimator sees the same greedy decode, so the comparison is internally valid.
+
+Token↔logit alignment was verified rather than assumed: recomputing the
+cumulative log-probability from the returned distributions reproduced
+faster-whisper's own reported score to within 0.15%.
+
+## Within-condition AUROC
+
+| SNR dB | WER | word_prob | word_min_prob | entropy_h1 | entropy_h2 | entropy_min_h2 |
+|---|---|---|---|---|---|---|
+| clean | 0.038 | 0.882 | 0.889 | 0.887 | 0.883 | **0.890** |
+| 20 | 0.046 | 0.867 | **0.875** | 0.868 | 0.868 | 0.874 |
+| 10 | 0.068 | 0.855 | 0.861 | 0.857 | 0.857 | **0.863** |
+| 5 | 0.121 | 0.859 | **0.866** | 0.852 | 0.859 | 0.864 |
+| 0 | 0.293 | 0.834 | **0.835** | 0.833 | **0.835** | **0.835** |
+| −5 | 0.684 | 0.811 | 0.815 | 0.813 | 0.815 | **0.816** |
+
+## Verdict — the reported entropy advantage does not replicate on Whisper
+
+**All five estimators are within 0.008 AUROC of each other at every noise
+level.** There is no 1.5–4× advantage; there is no advantage at all worth
+measuring. This is a negative replication, and a useful one: it says the
+result is architecture-specific rather than general.
+
+**What does help is the aggregation, not the estimator family.** Taking the
+**minimum** over a word's tokens beats the mean, consistently, and the effect
+is much clearer in error-detection precision than in AUROC:
+
+| SNR dB | chance | word_prob (mean) | word_min_prob | entropy_min_h2 |
+|---|---|---|---|---|
+| clean | 0.036 | 0.249 | 0.274 | **0.291** |
+| 20 | 0.043 | 0.294 | **0.374** | 0.357 |
+| 10 | 0.063 | 0.356 | 0.426 | **0.444** |
+| 5 | 0.111 | 0.464 | **0.502** | 0.490 |
+
+That is a 10–25% relative gain in AUC-NT for free. The mechanism is plain: a
+word is wrong if *any* of its tokens went wrong, so the weakest token carries
+the evidence and averaging dilutes it.
+
+### The engineering conclusion
+
+**Entropy costs beam search and buys nothing.** Adopting it would mean giving
+up beam-5 decoding — logits are greedy-only — plus carrying a 51,865-wide
+distribution per decode step, in exchange for an AUROC difference inside the
+noise floor. Use **`min` over a word's token probabilities**: it is the best
+or joint-best estimator in almost every cell, needs no logits, and works
+under the beam search already in production.
+
+Caveat on scope: one corpus, read English, additive white noise. The negative
+result is about *this* comparison on Whisper, not a claim that entropy is
+useless in general.
+
 ## Config-change A/Bs
 
 `RobustnessConfig` defaults are load-bearing (VAD on, context carry off,
@@ -513,12 +588,21 @@ temp ladder 0→1.0, CR gate 2.4, logprob gate −1.0, no-speech 0.6, flag
 | date | knob | from → to | effect on WER / flags | verdict |
 |---|---|---|---|---|
 | 2026-08-02 | `denoise` | off → on | WER +0.02 to +0.15, worst at low SNR; LID p 0.77 → 0.63 at −5 dB | **rejected**, keep off |
-| 2026-08-03 | `low_confidence` | 0.55 → **0.85** | 0.55 flagged 0/18 segments across the ladder incl. 33% WER; 0.85 flags 0 while WER ≤ 0.05 and 8/8 once WER ≥ 0.15 | **adopted** |
+| 2026-08-03 | `low_confidence` | 0.55 → **0.85** | 0.55 flagged 0/18 segments across the ladder incl. 33% WER; 0.85 flags 0 while WER ≤ 0.05 and 8/8 once WER ≥ 0.15 | **adopted**, then **superseded** — see below |
+| 2026-08-07 | flagging *signal* | `exp(avg_logprob)` per segment → **`min` word probability** | segment signal is a per-window constant, AUROC 0.581 on clean audio vs 0.894 for per-word; min-over-tokens beats mean by 10–25% AUC-NT | **pending Phase 3** |
 
 ## Open items
 
-- **Confirm 0.85 beyond one clip** — accents, spontaneous speech, non-English.
-  0.55 is refuted everywhere; 0.85 is only established here.
+- **Phase 3: ship the calibrated reliability layer** on `min` word
+  probability, conditioned on noise level (global calibration fails — NCE
+  goes negative at −5 dB while AUROC stays 0.762). This supersedes the 0.85
+  segment threshold rather than re-tuning it.
+- **Second corpus.** Everything here is read English with additive white
+  noise. Both the positive result (per-word works) and the negative one
+  (entropy does not help) need a different corpus and real noise before
+  either is stated as general.
+- **Deletions stay invisible.** A dropped word leaves no token to score;
+  structural to per-word confidence, not specific to this signal.
 - Broader corpus (LibriSpeech test-clean/test-other, FLEURS) before any of
   these WER figures are described as benchmark results rather than
   characterization of one clip.
