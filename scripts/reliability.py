@@ -38,7 +38,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from validate import banner, mix_at_snr  # noqa: E402
+from corpora import load_corpus, mix  # noqa: E402
+from validate import banner  # noqa: E402
 
 from speechlens.asr import RobustnessConfig  # noqa: E402
 from speechlens.confidence import summarize  # noqa: E402
@@ -47,31 +48,6 @@ from speechlens.pipeline import SpeechLens  # noqa: E402
 
 LEVELS = [None, 20, 10, 5, 0, -5]
 ESTIMATORS = ("word_prob", "seg_conf", "seg_min_word", "speech_prob")
-
-
-def load_corpus(limit: int):
-    """LibriSpeech dummy validation split as (audio, sr, reference) triples.
-
-    decode=False keeps `datasets` from reaching for torchcodec, and so torch —
-    the same trick scripts/make_clip.py uses to hold the no-torch ceiling.
-    """
-    try:
-        import soundfile as sf
-        from datasets import Audio, load_dataset
-    except ImportError:
-        sys.exit("needs `pip install datasets` (validation-only)")
-
-    ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean",
-                      split="validation")
-    ds = ds.cast_column("audio", Audio(decode=False))
-    out = []
-    for i in range(min(limit, len(ds))):
-        row = ds[i]
-        a = row["audio"]
-        raw = a["bytes"] if a.get("bytes") else Path(a["path"]).read_bytes()
-        y, sr = sf.read(io.BytesIO(raw), dtype="float32")
-        out.append((y, int(sr), row["text"].strip()))
-    return out
 
 
 def collect(lens, audio, sr, reference, cfg, language=None):
@@ -114,6 +90,10 @@ def main() -> None:
     p.add_argument("--model", default="small")
     p.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     p.add_argument("--compute-type", default="auto")
+    p.add_argument("--corpus", default="librispeech",
+                   choices=["librispeech", "edacc"])
+    p.add_argument("--noise", default="white",
+                   choices=["white", "pink", "babble"])
     p.add_argument("--limit", type=int, default=40, help="utterances")
     p.add_argument("--language", default="en",
                    help="force the language; the corpus is known English, so "
@@ -124,10 +104,20 @@ def main() -> None:
     args = p.parse_args()
 
     banner("reliability", args, args.model)
-    corpus = load_corpus(args.limit)
-    total_s = sum(len(y) / sr for y, sr, _ in corpus)
-    print(f"corpus: {len(corpus)} utterances, {total_s / 60:.1f} min audio")
-    print(f"ladder: {LEVELS}\n")
+    corpus = load_corpus(args.corpus, args.limit)
+    if not corpus:
+        sys.exit("corpus loaded no usable utterances")
+    total_s = sum(len(y) / sr for y, sr, _t, _m in corpus)
+    accents = sorted({m.get("accent", "?") for *_r, m in corpus})
+    print(f"corpus: {args.corpus} — {len(corpus)} utterances, "
+          f"{total_s / 60:.1f} min audio")
+    print(f"accents: {', '.join(accents[:6])}"
+          f"{' ...' if len(accents) > 6 else ''}")
+    print(f"noise: {args.noise}   ladder: {LEVELS}\n")
+
+    # Babble is built from the corpus itself, so the interfering voices match
+    # the recording conditions of the speech they mask.
+    pool = [y for y, _sr, _t, _m in corpus] if args.noise == "babble" else None
 
     lens = SpeechLens(model_size=args.model, device=args.device,
                       compute_type=args.compute_type)
@@ -140,8 +130,8 @@ def main() -> None:
         label = "clean" if snr is None else str(snr)
         agg = {e: [] for e in ESTIMATORS}
         labels_all, refs, hyps = [], [], []
-        for y, sr, ref in corpus:
-            audio = y if snr is None else mix_at_snr(y, snr, rng)
+        for y, sr, ref, _meta in corpus:
+            audio = y if snr is None else mix(args.noise, y, snr, rng, pool)
             (scores, labels, skipped), text = collect(
                 lens, audio, sr, ref, cfg, language=args.language or None)
             dropped += skipped
