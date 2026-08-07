@@ -28,7 +28,7 @@ speechlens = "speechlens.cli:main"
 include = ["speechlens*"]
 
 [tool.setuptools.package-data]
-speechlens = ["static/*.html"]
+speechlens = ["static/*.html", "policies/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

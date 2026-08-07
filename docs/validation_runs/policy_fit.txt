@@ -1,0 +1,28 @@
+estimator=word_prob  target_risk=0.02
+
+Calibration, fit on half and scored on the held-out half
+  cond      n    acc   AUROC  ECE raw  ECE cal  NCE raw  NCE cal
+ clean   1157  0.955   0.872    0.023    0.026    0.198    0.220
+    20   1166  0.942   0.857    0.028    0.038    0.220    0.205
+    10   1158  0.929   0.822    0.037    0.032    0.148    0.133
+     5   1162  0.890   0.842    0.053    0.050    0.174    0.189
+     0   1186  0.734   0.834    0.076    0.041    0.198    0.237
+    -5   1258  0.439   0.750    0.222    0.033   -0.164    0.149
+
+Operating points at target risk 2% (accept when calibrated score >= threshold)
+  cond     WER  threshold  coverage    risk  interpretation
+ clean   0.047      0.765     90.4%    1.9%  auto-accept 90% of words, 1.9% of those wrong
+    20   0.064      0.789     86.8%    2.0%  auto-accept 87% of words, 2.0% of those wrong
+    10   0.076      0.883     77.8%    2.0%  auto-accept 78% of words, 2.0% of those wrong
+     5   0.117      0.931     56.9%    2.0%  auto-accept 57% of words, 2.0% of those wrong
+     0   0.288      1.100      0.0%    0.0%  nothing is safe to auto-accept
+    -5   0.670      1.100      0.0%    0.0%  nothing is safe to auto-accept
+
+Coverage at other risk tolerances (fraction auto-accepted)
+  cond      1%       2%       5%      10%
+ clean   63.5%    90.4%   100.0%   100.0%
+    20   64.6%    86.8%    97.9%   100.0%
+    10   26.0%    77.8%    95.2%   100.0%
+     5   37.9%    56.9%    81.5%    98.2%
+     0    0.0%     0.0%    43.0%    59.1%
+    -5    0.0%     0.0%     0.0%     0.0%
