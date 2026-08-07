@@ -35,13 +35,28 @@ class RobustnessConfig:
 
 @dataclass
 class TranscriptSegment:
+    """One segment of transcript.
+
+    Scope warning on the confidence fields. faster-whisper computes
+    ``avg_logprob``, ``no_speech_prob`` and ``compression_ratio`` **once per
+    30 s decode window** and assigns the same value to every segment that
+    window produces (``transcribe.py`` ~L1466 and ~L1362 in 1.2.x). They are
+    therefore per-window figures wearing a per-segment label: within a window
+    they are constant, so they cannot distinguish a good segment from a bad
+    one there. Measured on a 130 s clip: 22 segments, 5 windows, exactly 5
+    distinct values — see ``docs/validation_runs/window_scope_probe.txt``.
+
+    ``words[].prob`` is the genuinely per-unit signal: a mean over that word's
+    own token probabilities. On the same clip it spanned 0.150–0.999 while the
+    window value stayed flat.
+    """
     id: int
     start: float
     end: float
     text: str
-    avg_logprob: float
-    no_speech_prob: float
-    confidence: float          # exp(avg_logprob): geometric-mean token prob
+    avg_logprob: float         # PER-WINDOW, broadcast across segments
+    no_speech_prob: float      # PER-WINDOW, broadcast across segments
+    confidence: float          # exp(avg_logprob), inherits the window scope
     flagged: bool
     words: Optional[list] = None
 

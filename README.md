@@ -11,7 +11,7 @@ The interesting engineering is the robustness harness around Whisper, not the
 model itself: Silero VAD gating (the single biggest anti-hallucination
 measure), chunk-voting language ID fused in log space, a beam-search decode
 with a temperature fallback ladder, repetition and no-speech gates, and
-per-segment confidence flagging so low-quality output is marked instead of
+confidence flagging so low-quality output is marked instead of
 silently trusted.
 
 ## Install
@@ -84,6 +84,17 @@ re-decoded hotter whenever `compression_ratio > 2.4` (repetition loop) or
 little cross-segment consistency for zero error propagation on hard audio.
 `no_speech_threshold=0.6` suppresses phantom segments. Segments whose
 `exp(avg_logprob)` falls below `low_confidence=0.85` are flagged, not hidden.
+
+**Scope caveat on that flag.** faster-whisper computes `avg_logprob`,
+`no_speech_prob` and `compression_ratio` once per **30-second decode window**
+and copies them onto every segment from that window — 22 segments over 5
+windows yield exactly 5 distinct values
+([probe](docs/validation_runs/window_scope_probe.txt)). So the flag is a
+per-window judgement wearing a per-segment label, and it cannot tell a good
+segment from a bad one inside the same window. `words[].prob` is the real
+per-unit signal and discriminates far better; see
+[`docs/VALIDATION.md`](docs/VALIDATION.md). Treat `0.85` as a working default,
+not a validated one.
 `initial_prompt` biases decoding toward domain vocabulary (product names,
 jargon). The optional `--denoise` stage is deliberately off by default —
 Whisper is trained on noisy audio and spectral gating can smear formants;

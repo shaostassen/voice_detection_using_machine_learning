@@ -1,0 +1,36 @@
+duration=130.5s  -> expect ~5 windows
+
+22 segments
+
+  seek  avg_logprob  no_speech   compr  nw   wmin   wmax  text
+     0    -0.127099   0.009211   1.545  17  0.631  0.997  Mr. Quilter is the Apostle of the 
+     0    -0.127099   0.009211   1.545  10  0.609  0.995  Nor is Mr. Quilter's manner less i
+     0    -0.127099   0.009211   1.545  17  0.782  0.999  He tells us that at this festive s
+     0    -0.127099   0.009211   1.545  15  0.530  0.999  before us, symbolies drawn from ea
+     0    -0.127099   0.009211   1.545  14  0.783  0.997  He has grave doubts whether Sir Fr
+  2862    -0.279335   0.011467   1.481  10  0.319  0.999  and can discover in it but little 
+  2862    -0.279335   0.011467   1.481  14  0.391  0.996  Linnell's pictures are a sort of U
+  2862    -0.279335   0.011467   1.481   8  0.305  0.995  idles are as national as a jingle 
+  2862    -0.279335   0.011467   1.481  16  0.589  0.998  Mr. Birkitt Foster's landscapes sm
+  2862    -0.279335   0.011467   1.481  17  0.452  0.999  to flash his teeth, and Mr. John C
+  5720    -0.186493   0.015359   1.496  16  0.150  0.986  Before he says, like a shampoo and
+  5720    -0.186493   0.015359   1.496  14  0.478  0.998  for us to point out how luminous t
+  5720    -0.186493   0.015359   1.496  11  0.473  0.998  Under general principles of art, M
+  5720    -0.186493   0.015359   1.496  15  0.806  0.997  Painting, he tells us, is of a dif
+  5720    -0.186493   0.015359   1.496   4  0.653  0.996  is adding more factor.
+  8586    -0.156305   0.022785   1.540  11  0.633  0.996  As for etchings, they are of two k
+  8586    -0.156305   0.022785   1.540  16  0.693  0.999  He laments most bitterly the divor
+  8586    -0.156305   0.022785   1.540  16  0.495  0.998  usually call pictures, makes a cus
+  8586    -0.156305   0.022785   1.540  14  0.953  0.998  the great days of art Michelangelo
+ 11584    -0.189381   0.002530   1.357  17  0.845  0.999  In fact, he is quite severe on Mr.
+ 11584    -0.189381   0.002530   1.357  15  0.236  0.997  the frailty of man, and remarks wi
+ 11584    -0.189381   0.002530   1.357   2  0.986  0.998  of feeling
+
+segments                    : 22
+distinct seek (windows)     : 5
+distinct avg_logprob        : 5
+distinct no_speech_prob     : 5
+distinct compression_ratio  : 5
+word probability range      : 0.150 .. 0.999
+
+CONFIRMED: avg_logprob is PER-WINDOW, broadcast to every segment in that window.
