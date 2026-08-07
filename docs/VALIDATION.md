@@ -360,6 +360,63 @@ because this is `int8` on CPU rather than `float16`. A ~0.02 difference on
 one clip is inside the noise floor of this measurement, not a quantization
 finding.)
 
+---
+
+# Finding — 2026-08-07 — `avg_logprob` is per-window, not per-segment
+
+| field | value |
+|---|---|
+| probe | [`scripts/probe_window_scope.py`](../scripts/probe_window_scope.py) |
+| raw log | [`validation_runs/window_scope_probe.txt`](validation_runs/window_scope_probe.txt) |
+| model | `small`, int8, CPU (the effect is structural, not model-specific) |
+| audio | 130.5 s — 12 concatenated LibriSpeech utterances, forcing 5 decode windows |
+
+faster-whisper computes `avg_logprob` **once per 30-second decode window**
+(`transcribe.py:1466`, from `result.scores[0]` over the whole generated
+sequence) and then assigns that one value to **every segment** the window
+produced (`transcribe.py:1362`). `no_speech_prob` and `compression_ratio` are
+broadcast the same way.
+
+Measured on the 130 s clip:
+
+| quantity | count |
+|---|---|
+| segments | 22 |
+| distinct decode windows (`seek`) | 5 |
+| **distinct `avg_logprob` values** | **5** |
+| distinct `no_speech_prob` values | 5 |
+| distinct `compression_ratio` values | 5 |
+| per-word probability range | 0.150 – 0.999 |
+
+Distinct values track the window count, not the segment count.
+
+### Why this matters
+
+`TranscriptSegment.confidence` is `exp(avg_logprob)`, so **the confidence this
+project flags on is a per-window figure wearing a per-segment label.** Within
+a window it is constant, which means it cannot — even in principle — pick the
+bad segment out of a good window. That is the job a reliability flag exists to
+do.
+
+It also explains the `conf min == mean == max` rows in the 2026-08-03 gate
+study, which at the time looked like a quirk of a short clip. It was not: it
+is the data model.
+
+**Consequence for the 0.85 threshold adopted on 2026-08-03: it is provisional.**
+The A/B that justified it compared six *window-level* points across noise
+conditions, where the signal does vary and does separate clean from degraded
+audio. Nothing in that data speaks to within-window discrimination, because
+there was none to measure. 0.55 remains refuted — it sat below the model's
+observed floor and could never fire. 0.85 is a working default, not a
+validated one, pending the word-level study below.
+
+The genuinely per-unit signal was already in the output the whole time:
+`words[].prob` is a mean over that word's own token probabilities
+(`transcribe.py:1747`) and spanned 0.150–0.999 on the same clip while the
+window value stayed flat. It is built at `speechlens/asr.py`, serialized to
+JSON, and read by nothing — not the CLI, not the web UI, and not reachable
+through the HTTP API at all.
+
 ## Config-change A/Bs
 
 `RobustnessConfig` defaults are load-bearing (VAD on, context carry off,

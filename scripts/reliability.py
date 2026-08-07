@@ -74,13 +74,13 @@ def load_corpus(limit: int):
     return out
 
 
-def collect(lens, audio, sr, reference, cfg):
+def collect(lens, audio, sr, reference, cfg, language=None):
     """One utterance -> per-word (estimator scores, correctness) rows.
 
     Words come back in reading order across segments, which is what lets the
     alignment labels line up with the scores one-to-one.
     """
-    r = lens.analyze((audio, sr), cfg=cfg)
+    r = lens.analyze((audio, sr), language=language, cfg=cfg)
     segments = r.transcript["segments"]
 
     raw = {e: [] for e in ESTIMATORS}
@@ -115,6 +115,11 @@ def main() -> None:
     p.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     p.add_argument("--compute-type", default="auto")
     p.add_argument("--limit", type=int, default=40, help="utterances")
+    p.add_argument("--language", default="en",
+                   help="force the language; the corpus is known English, so "
+                        "this skips chunk-voted LID (3 extra encoder passes "
+                        "per utterance) and removes LID drift as a confound "
+                        "in the confidence comparison. Pass '' to run LID.")
     p.add_argument("--json", default=None, help="write raw pairs here")
     args = p.parse_args()
 
@@ -137,7 +142,8 @@ def main() -> None:
         labels_all, refs, hyps = [], [], []
         for y, sr, ref in corpus:
             audio = y if snr is None else mix_at_snr(y, snr, rng)
-            (scores, labels, skipped), text = collect(lens, audio, sr, ref, cfg)
+            (scores, labels, skipped), text = collect(
+                lens, audio, sr, ref, cfg, language=args.language or None)
             dropped += skipped
             for e in ESTIMATORS:
                 agg[e].extend(scores[e])
