@@ -82,6 +82,33 @@ def test_length_mismatch_raises():
         auroc([0.1, 0.2], [True])
 
 
+def _auroc_brute(scores, correct):
+    """Definition, straight from the probability statement. O(n^2)."""
+    pos = [s for s, c in zip(scores, correct) if c]
+    neg = [s for s, c in zip(scores, correct) if not c]
+    if not pos or not neg:
+        return float("nan")
+    total = sum(1.0 if p > n else (0.5 if p == n else 0.0)
+                for p in pos for n in neg)
+    return total / (len(pos) * len(neg))
+
+
+def test_rank_sum_matches_brute_force_including_ties():
+    # The fast path uses the rank-sum identity with tie-averaged ranks. Ties
+    # are where that goes wrong silently, so the value set is deliberately
+    # tiny to force collisions.
+    import random
+    rng = random.Random(0)
+    for _ in range(400):
+        n = rng.randint(2, 30)
+        scores = [rng.choice([0.1, 0.2, 0.3, 0.5, 0.9]) for _ in range(n)]
+        correct = [rng.random() < 0.7 for _ in range(n)]
+        fast, slow = auroc(scores, correct), _auroc_brute(scores, correct)
+        if math.isnan(fast) and math.isnan(slow):
+            continue
+        assert fast == pytest.approx(slow, abs=1e-12)
+
+
 # --- calibration ------------------------------------------------------------
 
 def test_ece_zero_when_confidence_matches_accuracy():
