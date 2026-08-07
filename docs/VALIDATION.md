@@ -665,14 +665,41 @@ hundred. That in turn exposed a third bug: the PAVA solver only merged on
 strict violation, leaving runs of equal values as singleton blocks, so every
 one was smoothed as though supported by a single observation.
 
-## Known limitation
+## Automatic policy selection — 2026-08-07
 
-**The right policy depends on conditions the pipeline cannot yet detect.**
-Coverage at 2% risk runs from 90% on clean speech to zero at 0 dB, so
-`load_bundled_policy` deliberately takes an explicit condition and has no
-default — silently defaulting to `clean` would auto-accept most of a
-transcript that is 29% wrong. Estimating SNR (or picking a policy from
-observed score distribution) is the obvious next step.
+The limitation above (the caller had to name the noise condition) is closed.
+The VAD already partitions the signal: non-speech regions are noise alone,
+speech regions are speech plus that same noise, which is enough for an
+energy-ratio SNR estimate at no extra model cost
+([`speechlens/snr.py`](../speechlens/snr.py)).
+
+Validated against the real ladder — the same clip, the same seeded noise, real
+Silero VAD:
+
+| true SNR | estimated | error | policy picked |
+|---|---|---|---|
+| clean | 38.5 | — | clean ✓ |
+| 20 | 20.5 | +0.5 | 20 ✓ |
+| 10 | 9.4 | −0.6 | 10 ✓ |
+| 5 | 5.5 | +0.5 | 5 ✓ |
+| 0 | 0.3 | +0.3 | 0 ✓ |
+| −5 | −4.7 | +0.3 | −5 ✓ |
+
+**6/6 correct selections, all within 0.6 dB.** `--reliability auto` now picks
+the policy from the audio.
+
+Two details that matter more than they look:
+
+- **The noise floor is subtracted** from the speech-region power. Speech
+  regions carry signal *plus* noise, so the naive ratio reads ~3 dB high at
+  0 dB SNR — a full rung of the ladder, and therefore the wrong policy.
+- **Ties resolve to the noisier policy.** Being too cautious costs coverage;
+  being too optimistic ships wrong words as trustworthy.
+
+When the estimate is impossible — no speech, or no non-speech to sample the
+noise from — `auto` applies **no policy** and says so in the warnings, rather
+than falling back to `clean`. A missing annotation is recoverable; a
+fabricated one silently auto-accepts a transcript that might be 29% wrong.
 
 ## Config-change A/Bs
 

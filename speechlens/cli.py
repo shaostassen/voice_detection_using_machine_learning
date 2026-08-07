@@ -16,7 +16,9 @@ def cmd_analyze(args) -> int:
     from speechlens.pipeline import SpeechLens
 
     policy = None
-    if args.reliability:
+    if args.reliability == "auto":
+        policy = "auto"          # resolved from an SNR estimate in the pipeline
+    elif args.reliability:
         from speechlens.calibration import load_bundled_policy
         policy = load_bundled_policy(args.reliability)
 
@@ -52,8 +54,8 @@ def cmd_analyze(args) -> int:
 
     rel = result.reliability
     if rel:
-        print(f"\nReliability ({rel['condition']} policy, "
-              f"{rel['target_risk']:.0%} target error): "
+        print(f"\nReliability ({rel['condition']} policy via "
+              f"{rel['selected_by']}, {rel['target_risk']:.0%} target error): "
               f"{rel['accepted']}/{rel['words']} words auto-accepted "
               f"({rel['coverage']:.0%}), {rel['review']} need review")
         flagged_words = [w for s in result.transcript["segments"]
@@ -111,12 +113,12 @@ def main(argv=None) -> int:
                         "robustness)")
     a.add_argument("--word-timestamps", action="store_true")
     a.add_argument("--reliability", default=None, metavar="CONDITION",
-                   help="per-word calibrated reliability using a bundled "
-                        "policy: clean, 20, 10, 5, 0, -5 (dB SNR). Pick the "
-                        "one matching your audio — at 2%% tolerated error, "
-                        "coverage runs from 90%% on clean speech to 0%% at "
-                        "0 dB, so a wrong choice over-accepts. Implies "
-                        "--word-timestamps.")
+                   help="per-word calibrated reliability. 'auto' estimates "
+                        "SNR from the VAD partition and picks the matching "
+                        "policy; or name one: clean, 20, 10, 5, 0, -5 (dB). "
+                        "The choice matters — at 2%% tolerated error coverage "
+                        "runs from 90%% on clean speech to 0%% at 0 dB. "
+                        "Implies --word-timestamps.")
     a.add_argument("--prompt", default=None,
                    help="initial prompt / domain vocabulary")
     a.add_argument("--json", default=None, help="write full result JSON here")

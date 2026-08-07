@@ -201,7 +201,7 @@ by calibrating the per-word probability against measured correctness and
 picking a threshold from a tolerated error rate.
 
 ```bash
-speechlens analyze clip.wav --reliability clean
+speechlens analyze clip.wav --reliability auto
 ```
 
 ```
@@ -217,11 +217,18 @@ lowest of all 60. Meanwhile the segment gate marked **all four segments**
 `[!]` at an identical `0.83` — that repeated value is the per-window constant,
 saying "everything is suspect" about a transcript that is 95% correct.
 
-Pick the policy that matches your audio (`clean, 20, 10, 5, 0, -5` dB SNR).
-There is deliberately no default: at 2% tolerated error, coverage runs from
-90% on clean speech to **zero** at 0 dB, so defaulting to `clean` would
-auto-accept most of a transcript that is 29% wrong. Full operating points and
-the calibration method are in [`docs/VALIDATION.md`](docs/VALIDATION.md).
+`auto` estimates SNR from the VAD partition — non-speech regions are noise
+alone, speech regions are speech plus that noise — and picks the matching
+policy. On the seeded ladder it recovers the true SNR within 0.6 dB and
+selects correctly at all six levels. You can also name one (`clean, 20, 10,
+5, 0, -5` dB).
+
+There is **no silent default**. At 2% tolerated error, coverage runs from 90%
+on clean speech to **zero** at 0 dB, so guessing `clean` would auto-accept
+most of a transcript that is 29% wrong. When the SNR cannot be estimated —
+no speech, or no non-speech to sample noise from — `auto` applies no policy
+and says so, rather than falling back. Full operating points and the
+calibration method are in [`docs/VALIDATION.md`](docs/VALIDATION.md).
 
 In Python, and over HTTP via a `reliability` form field:
 

@@ -67,7 +67,36 @@ class SpeechLens:
         self.model_size = model_size
         self.device, self.compute_type = resolve_device(device, compute_type)
 
-    def _score_words(self, tsegs, warnings: list, policy=None) -> dict:
+    def _resolve_policy(self, policy, y, sr, segments, warnings: list):
+        """Turn ``"auto"`` into a concrete policy using an SNR estimate.
+
+        Returns ``(policy, selected_by)``. When the estimate is unavailable the
+        policy is dropped rather than defaulted: guessing `clean` on unknown
+        audio would auto-accept most of a transcript that might be 29% wrong,
+        and no annotation at all is the safer failure.
+        """
+        if policy is None:
+            policy = self.policy
+        if policy is None:
+            return None, ""
+        if policy != "auto":
+            return policy, "explicit"
+
+        from speechlens.calibration import (available_policies,
+                                            load_bundled_policy)
+        from speechlens.snr import estimate_snr, nearest_condition
+
+        snr = estimate_snr(y, sr, segments)
+        cond = nearest_condition(snr, available_policies())
+        if cond is None:
+            warnings.append("could not estimate SNR (needs both speech and "
+                            "non-speech audio), so no reliability policy was "
+                            "applied; pass one explicitly")
+            return None, ""
+        return load_bundled_policy(cond), f"auto (SNR≈{snr:.0f} dB)"
+
+    def _score_words(self, tsegs, warnings: list, policy=None,
+                     selected_by: str = "explicit") -> dict:
         """Annotate each word with calibrated reliability; summarize coverage.
 
         Returns an empty dict when no policy is configured or when word
@@ -75,7 +104,6 @@ class SpeechLens:
         is honest, a guessed one is the failure mode this project exists to
         avoid.
         """
-        policy = policy if policy is not None else self.policy
         if policy is None:
             return {}
 
@@ -103,6 +131,7 @@ class SpeechLens:
 
         return {
             "estimator": "word_prob",
+            "selected_by": selected_by,
             "target_risk": policy.target_risk,
             "threshold": round(policy.threshold, 3),
             "words": len(words),
@@ -175,7 +204,9 @@ class SpeechLens:
         # clean audio vs 0.89 for the per-word signal; docs/VALIDATION.md).
         # This stage annotates each word with a calibrated P(correct) and an
         # accept/review decision instead.
-        reliability = self._score_words(tsegs, warnings, policy)
+        policy, selected_by = self._resolve_policy(policy, y, sr, segments,
+                                                   warnings)
+        reliability = self._score_words(tsegs, warnings, policy, selected_by)
 
         elapsed = time.perf_counter() - t0
         return AnalysisResult(

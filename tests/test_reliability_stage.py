@@ -129,6 +129,61 @@ def test_annotations_are_plain_python_types():
     assert type(r.reliability["coverage"]) is float
 
 
+def _stub_vad(monkeypatch, spans):
+    """Force the VAD result so these test policy resolution, not Silero.
+
+    Silero legitimately rejects synthetic tones as non-speech — that is the
+    anti-hallucination property it exists for — so real VAD on a sine wave
+    yields no speech and the SNR estimate correctly declines. Stubbing keeps
+    the subject of the test the resolution path.
+    """
+    import speechlens.pipeline as pl
+    from speechlens.vad import SpeechSegment
+    segs = [SpeechSegment(a, b) for a, b in spans]
+    monkeypatch.setattr(pl, "vad_detect", lambda y, sr: (segs, "stub"))
+
+
+def test_auto_selects_a_policy_from_the_audio(monkeypatch):
+    # Loud tone between two silences: a clean, high-SNR signal.
+    sr = 16000
+    t = np.arange(int(2.0 * sr)) / sr
+    tone = (0.4 * np.sin(2 * np.pi * 180 * t)).astype(np.float32)
+    y = np.concatenate([np.zeros(sr, np.float32), tone,
+                        np.zeros(sr, np.float32)])
+    _stub_vad(monkeypatch, [(1.0, 3.0)])
+
+    r = _lens(WordTranscriber()).analyze((y, sr), policy="auto")
+    assert r.reliability["selected_by"].startswith("auto")
+    assert r.reliability["condition"] == "clean"
+
+
+def test_auto_picks_a_noisier_policy_for_noisier_audio(monkeypatch):
+    sr = 16000
+    rng = np.random.default_rng(0)
+    t = np.arange(int(2.0 * sr)) / sr
+    tone = 0.4 * np.sin(2 * np.pi * 180 * t)
+    y = np.concatenate([np.zeros(2 * sr), tone, np.zeros(2 * sr)])
+    p_sig = float(np.mean(tone ** 2))
+    y = (y + rng.normal(0, np.sqrt(p_sig), y.size)).astype(np.float32)  # 0 dB
+    _stub_vad(monkeypatch, [(2.0, 4.0)])
+
+    r = _lens(WordTranscriber()).analyze((y, sr), policy="auto")
+    assert r.reliability["condition"] == "0"
+
+
+def test_auto_declines_rather_than_defaulting_when_it_cannot_estimate(monkeypatch):
+    # All speech, no noise sample. Guessing `clean` here would auto-accept a
+    # transcript that might be 29% wrong, so the honest result is no policy.
+    sr = 16000
+    t = np.arange(int(3.0 * sr)) / sr
+    y = (0.4 * np.sin(2 * np.pi * 180 * t)).astype(np.float32)
+    _stub_vad(monkeypatch, [(0.0, 3.0)])
+
+    r = _lens(WordTranscriber()).analyze((y, sr), policy="auto")
+    assert r.reliability == {}
+    assert any("estimate SNR" in w for w in r.warnings)
+
+
 def test_per_call_policy_overrides_without_touching_shared_state():
     # The HTTP server shares one pipeline across requests. Passing the policy
     # per call must not leak it into the next request, which assigning to
