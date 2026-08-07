@@ -417,6 +417,93 @@ window value stayed flat. It is built at `speechlens/asr.py`, serialized to
 JSON, and read by nothing — not the CLI, not the web UI, and not reachable
 through the HTTP API at all.
 
+---
+
+# Run — 2026-08-07 — word-level confidence: does it predict *which* word is wrong?
+
+| field | value |
+|---|---|
+| hardware | AMD Ryzen 9 9950X 16-Core (32 threads), Linux x86_64 |
+| model | `large-v3`, `int8`, beam-5 (production decode) |
+| corpus | 73 LibriSpeech utterances, 8.0 min, ~1,160 words **per condition** |
+| language | forced `en` — skips chunk-voted LID, removing LID drift as a confound |
+| script | [`scripts/reliability.py`](../scripts/reliability.py) |
+| raw log | [`validation_runs/reliability_9950x.txt`](validation_runs/reliability_9950x.txt) |
+
+Every previous measurement here was **between-condition**: mean confidence
+falls as SNR falls. That never established the property a flag actually needs
+— **within-condition discrimination**, i.e. at a fixed noise level, does the
+score rank wrong words below right ones? A signal can track SNR perfectly and
+still be useless for flagging.
+
+Word-level correctness comes from a Levenshtein backtrace against the
+reference (`speechlens.metrics.labels_for_words`), with each word normalized
+independently so multi-token words like "don't" cannot desynchronize scores
+from labels.
+
+## Within-condition AUROC (0.5 = chance)
+
+| SNR dB | WER | accuracy | **word_prob** | seg_conf | seg_min_word | speech_prob |
+|---|---|---|---|---|---|---|
+| clean | 0.047 | 0.957 | **0.894** | 0.581 | 0.642 | 0.533 |
+| 20 | 0.064 | 0.942 | **0.883** | 0.645 | 0.645 | 0.636 |
+| 10 | 0.076 | 0.931 | **0.856** | 0.693 | 0.666 | 0.621 |
+| 5 | 0.117 | 0.892 | **0.850** | 0.683 | 0.632 | 0.603 |
+| 0 | 0.288 | 0.737 | **0.826** | 0.701 | 0.600 | 0.606 |
+| −5 | 0.670 | 0.426 | **0.762** | 0.681 | 0.564 | 0.625 |
+
+`word_prob` is the per-word mean token probability. `seg_conf` is
+`exp(avg_logprob)` — the signal the shipped confidence gate actually uses.
+
+## Verdict — the signal works, but it is not the one being used
+
+**Per-word probability discriminates errors well at every noise level**
+(AUROC 0.76–0.89), clearing the ≳0.75 bar set before the experiment ran. The
+feared outcome — that confidence is merely an SNR meter with no within-
+condition signal — is refuted.
+
+**The gate is flagging on the weaker signal.** `seg_conf` trails `word_prob`
+everywhere, and the gap is widest exactly where it matters most: on clean
+audio, 0.894 vs **0.581**. That is close to chance, and clean audio is
+precisely where errors are rare and a reliable flag is most valuable. The
+cause is structural, not tuning: `seg_conf` is constant across a 30 s decode
+window (see the per-window finding above), so within a window it cannot rank
+anything at all.
+
+**Error-detection precision tells the same story.** AUC-NT against a chance
+level equal to the corpus error rate:
+
+| SNR dB | chance | word_prob | seg_conf |
+|---|---|---|---|
+| clean | 0.043 | **0.316** (7.3× chance) | 0.227 |
+| 10 | 0.069 | **0.421** (6.1×) | 0.307 |
+| 0 | 0.263 | **0.610** (2.3×) | 0.454 |
+| −5 | 0.574 | **0.776** (1.4×) | 0.718 |
+
+**Calibration is better than expected.** For `word_prob`, ECE stays at
+0.018–0.085 from clean through 0 dB — a reported 0.9 really does mean about
+90% correct — and NCE stays positive (0.15–0.27), so the score beats the base
+rate as a predictor. AURC of 0.006 on clean audio means selective prediction
+works very well there.
+
+**It breaks down at −5 dB**: ECE 0.218 and **NCE −0.130**, i.e. below zero.
+At that point the score is worse than simply predicting the corpus accuracy
+for every word, even though its AUROC is still 0.762. That is the
+discrimination/calibration split in one row: the ranking is still informative
+while the numbers attached to it have stopped meaning anything. Any
+calibration layer must be conditioned on noise level, not fitted globally.
+
+### Consequences
+
+1. **Phase 3 is justified.** Build the calibrated reliability layer on
+   `words[].prob`, not on `avg_logprob`.
+2. **The 0.85 segment threshold should be superseded, not re-tuned.** No
+   threshold on a per-window constant can do the job; the granularity is
+   wrong, not the value.
+3. Deletions remain invisible — a dropped word leaves no token to score. That
+   is a structural blind spot of every per-word confidence signal, not a
+   defect of this one.
+
 ## Config-change A/Bs
 
 `RobustnessConfig` defaults are load-bearing (VAD on, context carry off,

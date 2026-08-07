@@ -1,0 +1,44 @@
+study=reliability  hardware=AMD Ryzen 9 9950X 16-Core Processor (Linux x86_64)  model=large-v3  device=cpu  compute_type=int8  date=2026-08-07
+cmd: python scripts/reliability.py --model large-v3 --device cpu --compute-type int8 --limit 73 --language en --json /tmp/rel_large.json
+
+corpus: 73 utterances, 8.0 min audio
+ladder: [None, 20, 10, 5, 0, -5]
+
+  clean dB  wer=0.047  words=1157
+     20 dB  wer=0.064  words=1166
+     10 dB  wer=0.076  words=1158
+      5 dB  wer=0.117  words=1162
+      0 dB  wer=0.288  words=1186
+     -5 dB  wer=0.670  words=1258
+
+==============================================================================
+WITHIN-CONDITION AUROC — can the score rank errors below correct words?
+0.5 is chance. This is the number the project turns on.
+==============================================================================
+ SNR dB    wer    acc      word_prob       seg_conf   seg_min_word    speech_prob
+  clean  0.047  0.957          0.894          0.581          0.642          0.533
+     20  0.064  0.942          0.883          0.645          0.645          0.636
+     10  0.076  0.931          0.856          0.693          0.666          0.621
+      5  0.117  0.892          0.850          0.683          0.632          0.603
+      0  0.288  0.737          0.826          0.701          0.600          0.606
+     -5  0.670  0.426          0.762          0.681          0.564          0.625
+
+AUC-NT (precision/recall for errors; chance = corpus error rate)
+ SNR dB  chance      word_prob       seg_conf   seg_min_word    speech_prob
+  clean   0.043          0.316          0.227          0.200          0.207
+     20   0.058          0.369          0.326          0.134          0.343
+     10   0.069          0.421          0.307          0.193          0.254
+      5   0.108          0.411          0.268          0.180          0.210
+      0   0.263          0.610          0.454          0.311          0.395
+     -5   0.574          0.776          0.718          0.612          0.696
+
+Calibration of the per-word signal (ECE / NCE, word_prob)
+ SNR dB      ECE      NCE     AURC
+  clean    0.018    0.249    0.006
+     20    0.020    0.269    0.011
+     10    0.023    0.156    0.019
+      5    0.040    0.206    0.027
+      0    0.085    0.166    0.097
+     -5    0.218   -0.130    0.367
+
+raw pairs -> /tmp/rel_large.json
