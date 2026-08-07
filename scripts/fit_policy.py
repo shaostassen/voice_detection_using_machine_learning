@@ -48,6 +48,12 @@ def main() -> None:
     p.add_argument("--estimator", default="word_prob")
     p.add_argument("--target-risk", type=float, default=0.02)
     p.add_argument("--out", default=None, help="directory to write policies")
+    p.add_argument("--test-json", default=None, metavar="PATH",
+                   help="second corpus to evaluate the fitted policies on. "
+                        "This is the question that decides whether the "
+                        "shipped policies are general or LibriSpeech-specific: "
+                        "at a 2%% promised error rate, what error rate does "
+                        "the policy actually deliver on unseen data?")
     args = p.parse_args()
 
     data = json.loads(Path(args.json_path).read_text())
@@ -106,6 +112,42 @@ def main() -> None:
             _thr, cov, _r = threshold_for_risk(cs, raw["labels"], t)
             cells.append(f"{cov:>7.1%}")
         print(f"{cond:>6} " + "  ".join(cells))
+
+    if args.test_json:
+        test = json.loads(Path(args.test_json).read_text())
+        print(f"\n{'=' * 76}")
+        print(f"TRANSFER — policies fitted on {Path(args.json_path).name}, "
+              f"applied to {Path(args.test_json).name}")
+        print("A promised risk that is not delivered means the policy is "
+              "corpus-specific.")
+        print("=" * 76)
+        print(f"{'cond':>6} {'AUROC':>7} {'ECE own':>8} {'ECE xfer':>9} "
+              f"{'promised':>9} {'delivered':>10} {'coverage':>9}  verdict")
+        for cond, pol in policies.items():
+            d = test.get(cond)
+            if not d or "_raw" not in d:
+                continue
+            scores, labels = d["_raw"][args.estimator], d["_raw"]["labels"]
+            xfer = [pol.calibrator.predict(s) for s in scores]
+
+            # Own-corpus calibrator, as an upper bound on what is achievable.
+            own = Calibrator.fit(scores, labels, condition=cond)
+            own_c = [own.predict(s) for s in scores]
+
+            kept = [c for s, c in zip(xfer, labels) if s >= pol.threshold]
+            delivered = (sum(1 for c in kept if not c) / len(kept)
+                         if kept else float("nan"))
+            cov = len(kept) / len(labels)
+            if not kept:
+                verdict = "accepts nothing"
+            elif delivered <= args.target_risk * 1.5:
+                verdict = "holds"
+            else:
+                verdict = f"BREAKS ({delivered / args.target_risk:.1f}x promised)"
+            print(f"{cond:>6} {auroc(scores, labels):>7.3f} "
+                  f"{ece(own_c, labels):>8.3f} {ece(xfer, labels):>9.3f} "
+                  f"{args.target_risk:>9.1%} {delivered:>10.1%} "
+                  f"{cov:>9.1%}  {verdict}")
 
     if args.out:
         out = Path(args.out)
