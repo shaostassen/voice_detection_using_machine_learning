@@ -67,7 +67,7 @@ class SpeechLens:
         self.model_size = model_size
         self.device, self.compute_type = resolve_device(device, compute_type)
 
-    def _score_words(self, tsegs, warnings: list) -> dict:
+    def _score_words(self, tsegs, warnings: list, policy=None) -> dict:
         """Annotate each word with calibrated reliability; summarize coverage.
 
         Returns an empty dict when no policy is configured or when word
@@ -75,7 +75,8 @@ class SpeechLens:
         is honest, a guessed one is the failure mode this project exists to
         avoid.
         """
-        if self.policy is None:
+        policy = policy if policy is not None else self.policy
+        if policy is None:
             return {}
 
         words = [w for s in tsegs for w in (s.words or [])]
@@ -88,25 +89,32 @@ class SpeechLens:
 
         accepted = 0
         for w in words:
-            r = self.policy.calibrator.predict(w["prob"])
-            ok = r >= self.policy.threshold
+            # float()/bool() are load-bearing, not cosmetic. faster-whisper's
+            # word probability is a numpy float64, and while that serializes
+            # (it subclasses float), comparing it yields numpy.bool_ — which
+            # does NOT subclass bool and makes json.dump raise mid-write,
+            # leaving a truncated file. Same for the numpy.int64 the
+            # accumulator would otherwise become.
+            r = float(policy.calibrator.predict(w["prob"]))
+            ok = bool(r >= policy.threshold)
             w["reliability"] = round(r, 3)
             w["accept"] = ok
-            accepted += ok
+            accepted += int(ok)
 
         return {
             "estimator": "word_prob",
-            "target_risk": self.policy.target_risk,
-            "threshold": round(self.policy.threshold, 3),
+            "target_risk": policy.target_risk,
+            "threshold": round(policy.threshold, 3),
             "words": len(words),
             "accepted": accepted,
             "coverage": round(accepted / len(words), 3),
             "review": len(words) - accepted,
-            "condition": self.policy.calibrator.condition,
+            "condition": policy.calibrator.condition,
         }
 
     def analyze(self, source, language: Optional[str] = None,
-                cfg: Optional[RobustnessConfig] = None) -> AnalysisResult:
+                cfg: Optional[RobustnessConfig] = None,
+                policy=None) -> AnalysisResult:
         t0 = time.perf_counter()
         warnings: list = []
 
@@ -167,7 +175,7 @@ class SpeechLens:
         # clean audio vs 0.89 for the per-word signal; docs/VALIDATION.md).
         # This stage annotates each word with a calibrated P(correct) and an
         # accept/review decision instead.
-        reliability = self._score_words(tsegs, warnings)
+        reliability = self._score_words(tsegs, warnings, policy)
 
         elapsed = time.perf_counter() - t0
         return AnalysisResult(

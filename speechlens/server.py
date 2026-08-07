@@ -47,13 +47,24 @@ def health():
 
 @app.post("/api/analyze")
 async def analyze(file: UploadFile = File(...),
-                  language: Optional[str] = Form(None)):
+                  language: Optional[str] = Form(None),
+                  reliability: Optional[str] = Form(None)):
     suffix = Path(file.filename or "clip.webm").suffix or ".webm"
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     try:
         tmp.write(await file.read())
         tmp.close()
-        result = get_pipeline().analyze(tmp.name, language=language or None)
+        cfg = policy = None
+        if reliability:
+            # Passed per call rather than assigned onto the shared pipeline
+            # singleton: mutating it would leak the policy into every later
+            # request, including ones that never asked for reliability.
+            from speechlens.asr import RobustnessConfig
+            from speechlens.calibration import load_bundled_policy
+            policy = load_bundled_policy(reliability)
+            cfg = RobustnessConfig(word_timestamps=True)
+        result = get_pipeline().analyze(tmp.name, language=language or None,
+                                        cfg=cfg, policy=policy)
         return JSONResponse(result.to_dict())
     except Exception as exc:
         return JSONResponse(

@@ -82,6 +82,8 @@ label{font-size:12px;color:var(--muted)}
   padding:2px 0}
 .seg .txt{font-size:15px}
 .seg.flagged .txt::after{content:" ⚠";color:#feae77}
+.word{border-radius:4px;padding:1px 4px;white-space:pre-wrap}
+.word.review{outline:1.5px solid #feae77;outline-offset:1px}
 /* stats + warnings */
 #stats{display:flex;gap:10px 22px;flex-wrap:wrap;font-size:12px;
   color:var(--muted)}
@@ -251,9 +253,31 @@ function render(d){
     row.innerHTML =
       `<span class="ts">${fmt(s.start)} → ${fmt(s.end)}</span>` +
       `<span class="conf" style="background:${c.css};color:${c.text}"` +
-      ` title="avg logprob ${s.avg_logprob}">${s.confidence.toFixed(2)}` +
+      ` title="per-window avg logprob ${s.avg_logprob} — constant across every` +
+      ` segment in this 30s window">${s.confidence.toFixed(2)}` +
       `</span><span class="txt"></span>`;
-    row.querySelector(".txt").textContent = s.text;
+
+    const txt = row.querySelector(".txt");
+    const words = s.words || [];
+    // Per-word reliability when a policy annotated it; otherwise the plain
+    // text. The segment score above is a per-window constant and cannot
+    // distinguish words inside one, so this is the layer worth reading.
+    if (words.length && words[0].reliability !== undefined){
+      for (const w of words){
+        const wc = magma(w.reliability);
+        const el = document.createElement("span");
+        el.className = "word" + (w.accept ? "" : " review");
+        el.style.background = wc.css;
+        el.style.color = wc.text;
+        el.title = `reliability ${w.reliability.toFixed(2)} — ` +
+                   (w.accept ? "auto-accepted" : "needs review");
+        el.textContent = w.word.trim();
+        txt.appendChild(el);
+        txt.appendChild(document.createTextNode(" "));
+      }
+    } else {
+      txt.textContent = s.text;
+    }
     segs.appendChild(row);
   }
 
@@ -265,7 +289,11 @@ function render(d){
     `<span>model <b>${P.model}</b></span>` +
     `<span>device <b>${P.device}/${P.compute_type}</b></span>` +
     `<span>rtf <b>${P.rtf}</b></span>` +
-    `<span>flagged <b>${d.transcript.flagged_segments}</b></span>`;
+    `<span>flagged <b>${d.transcript.flagged_segments}</b></span>` +
+    (d.reliability && d.reliability.words
+      ? `<span>auto-accepted <b>${Math.round(100*d.reliability.coverage)}%</b>` +
+        `</span><span>review <b>${d.reliability.review}</b></span>`
+      : "");
 
   const W = $("warnings");
   W.style.display = d.warnings.length ? "block" : "none";

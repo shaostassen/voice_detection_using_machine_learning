@@ -30,13 +30,20 @@ class FakeDetector:
 
 
 class WordTranscriber:
-    """Two words: one confident, one not."""
+    """Two words: one confident, one not.
+
+    Probabilities are ``np.float64`` because that is what faster-whisper
+    actually emits (``np.mean`` over token probabilities). It matters: a
+    Python float here made an earlier version of this test pass while
+    ``--json`` crashed in reality, since comparing a numpy float yields
+    ``numpy.bool_``, which is not JSON-serializable.
+    """
     def __init__(self, probs=(0.98, 0.20)):
         self.probs = probs
 
     def transcribe(self, y, language=None, cfg=None):
         words = [{"word": f" w{i}", "start": float(i), "end": float(i) + 0.5,
-                  "prob": p} for i, p in enumerate(self.probs)]
+                  "prob": np.float64(p)} for i, p in enumerate(self.probs)]
         seg = TranscriptSegment(0, 0.0, 1.0, "w0 w1", -0.2, 0.01,
                                 math.exp(-0.2), False, words)
         return [seg], SimpleNamespace(language="en", language_probability=0.99)
@@ -106,9 +113,30 @@ def test_missing_word_timestamps_warns_instead_of_guessing():
 def test_result_stays_json_serializable_with_reliability():
     r = _lens(WordTranscriber(), _policy()).analyze((_tone(), 16000))
     d = r.to_dict()
-    json.dumps(d)
+    json.dumps(d)          # the whole document, as `--json` writes it
     assert "reliability" in d
     assert d["reliability"]["estimator"] == "word_prob"
+
+
+def test_annotations_are_plain_python_types():
+    # Guards the numpy leak directly: json.dump fails *mid-write* on
+    # numpy.bool_, leaving a half-written file rather than a clean error.
+    r = _lens(WordTranscriber(), _policy()).analyze((_tone(), 16000))
+    for w in r.transcript["segments"][0]["words"]:
+        assert type(w["accept"]) is bool
+        assert type(w["reliability"]) is float
+    assert type(r.reliability["accepted"]) is int
+    assert type(r.reliability["coverage"]) is float
+
+
+def test_per_call_policy_overrides_without_touching_shared_state():
+    # The HTTP server shares one pipeline across requests. Passing the policy
+    # per call must not leak it into the next request, which assigning to
+    # `lens.policy` would.
+    lens = _lens(WordTranscriber())
+    assert lens.analyze((_tone(), 16000), policy=_policy()).reliability != {}
+    assert lens.policy is None
+    assert lens.analyze((_tone(), 16000)).reliability == {}
 
 
 def test_reliability_key_present_even_when_unused():

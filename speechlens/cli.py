@@ -15,15 +15,23 @@ def cmd_analyze(args) -> int:
     from speechlens.asr import RobustnessConfig
     from speechlens.pipeline import SpeechLens
 
+    policy = None
+    if args.reliability:
+        from speechlens.calibration import load_bundled_policy
+        policy = load_bundled_policy(args.reliability)
+
     cfg = RobustnessConfig(
         beam_size=args.beam,
         condition_on_previous_text=args.context,
         vad_filter=not args.no_vad,
-        word_timestamps=args.word_timestamps,
+        # Per-word reliability needs word timestamps; turning them on here
+        # rather than failing on a flag combination the user cannot guess.
+        word_timestamps=args.word_timestamps or bool(policy),
         initial_prompt=args.prompt,
     )
     lens = SpeechLens(model_size=args.model, device=args.device,
-                      compute_type=args.compute_type, denoise=args.denoise)
+                      compute_type=args.compute_type, denoise=args.denoise,
+                      policy=policy)
     result = lens.analyze(args.audio, language=args.language, cfg=cfg)
 
     lang = result.language
@@ -41,6 +49,22 @@ def cmd_analyze(args) -> int:
         flag = "  [!]" if seg["flagged"] else ""
         print(f"[{_fmt_ts(seg['start'])} -> {_fmt_ts(seg['end'])}] "
               f"({seg['confidence']:.2f}){flag} {seg['text']}")
+
+    rel = result.reliability
+    if rel:
+        print(f"\nReliability ({rel['condition']} policy, "
+              f"{rel['target_risk']:.0%} target error): "
+              f"{rel['accepted']}/{rel['words']} words auto-accepted "
+              f"({rel['coverage']:.0%}), {rel['review']} need review")
+        flagged_words = [w for s in result.transcript["segments"]
+                         for w in (s.get("words") or []) if not w["accept"]]
+        if flagged_words:
+            preview = "  ".join(
+                f"{w['word'].strip()}({w['reliability']:.2f})"
+                for w in flagged_words[:12])
+            more = "" if len(flagged_words) <= 12 else f"  (+{len(flagged_words) - 12} more)"
+            print(f"  review: {preview}{more}")
+
     for w in result.warnings:
         print(f"\n! {w}")
     if args.json:
@@ -86,6 +110,13 @@ def main(argv=None) -> int:
                    help="condition on previous text (off by default for "
                         "robustness)")
     a.add_argument("--word-timestamps", action="store_true")
+    a.add_argument("--reliability", default=None, metavar="CONDITION",
+                   help="per-word calibrated reliability using a bundled "
+                        "policy: clean, 20, 10, 5, 0, -5 (dB SNR). Pick the "
+                        "one matching your audio — at 2%% tolerated error, "
+                        "coverage runs from 90%% on clean speech to 0%% at "
+                        "0 dB, so a wrong choice over-accepts. Implies "
+                        "--word-timestamps.")
     a.add_argument("--prompt", default=None,
                    help="initial prompt / domain vocabulary")
     a.add_argument("--json", default=None, help="write full result JSON here")
