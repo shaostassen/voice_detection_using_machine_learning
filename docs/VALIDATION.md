@@ -579,6 +579,101 @@ Caveat on scope: one corpus, read English, additive white noise. The negative
 result is about *this* comparison on Whisper, not a claim that entropy is
 useless in general.
 
+---
+
+# Phase 3 — 2026-08-07 — the calibrated reliability layer
+
+| field | value |
+|---|---|
+| module | [`speechlens/calibration.py`](../speechlens/calibration.py) |
+| fitter | [`scripts/fit_policy.py`](../scripts/fit_policy.py) |
+| policies | [`speechlens/policies/`](../speechlens/policies/) (6, one per condition) |
+| raw output | [`validation_runs/policy_fit.txt`](validation_runs/policy_fit.txt) |
+| data | the Phase 1 pairs — `large-v3` int8, 73 utts, ~1,160 words per condition |
+
+Isotonic regression rather than Platt/temperature scaling: the relation
+between word probability and correctness is not logistic, and isotonic assumes
+only monotonicity — the property AUROC already established. Being monotone it
+cannot change the ranking, so AUROC is identical before and after. Calibration
+fixes the numbers; it never fixes discrimination.
+
+## Held-out calibration (fit on half, scored on the other half)
+
+| cond | accuracy | AUROC | ECE raw | ECE cal | NCE raw | NCE cal |
+|---|---|---|---|---|---|---|
+| clean | 0.955 | 0.872 | 0.023 | 0.026 | 0.198 | **0.220** |
+| 20 | 0.942 | 0.857 | 0.028 | 0.038 | 0.220 | 0.205 |
+| 10 | 0.929 | 0.822 | 0.037 | **0.032** | 0.148 | 0.133 |
+| 5 | 0.890 | 0.842 | 0.053 | **0.050** | 0.174 | **0.189** |
+| 0 | 0.734 | 0.834 | 0.076 | **0.041** | 0.198 | **0.237** |
+| −5 | 0.439 | 0.750 | 0.222 | **0.033** | −0.164 | **+0.149** |
+
+Calibration is roughly neutral where the raw score was already well behaved
+(clean through 10 dB) and transformative where it was not. At −5 dB it takes
+ECE from 0.222 to 0.033 and flips NCE from **−0.164 to +0.149** — from "worse
+than quoting the corpus average" to genuinely informative, without touching
+the model. That is precisely the gap Phase 1 identified.
+
+## Operating points at 2% tolerated error
+
+Accept a word when its calibrated score clears the threshold; route the rest
+to review.
+
+| cond | WER | threshold | coverage | realized risk |
+|---|---|---|---|---|
+| clean | 0.047 | 0.765 | **90.4%** | 1.9% |
+| 20 | 0.064 | 0.789 | 86.8% | 2.0% |
+| 10 | 0.076 | 0.883 | 77.8% | 2.0% |
+| 5 | 0.117 | 0.931 | 56.9% | 2.0% |
+| 0 | 0.288 | — | **0%** | — |
+| −5 | 0.670 | — | **0%** | — |
+
+Coverage at other tolerances:
+
+| cond | 1% | 2% | 5% | 10% |
+|---|---|---|---|---|
+| clean | 63.5% | 90.4% | 100% | 100% |
+| 10 | 26.0% | 77.8% | 95.2% | 100% |
+| 5 | 37.9% | 56.9% | 81.5% | 98.2% |
+| 0 | 0% | 0% | 43.0% | 59.1% |
+| −5 | 0% | 0% | 0% | 0% |
+
+**The refusals are the most useful rows.** At 0 dB and below, no threshold
+reaches 2% error: the honest answer is that none of the transcript can be
+auto-accepted, and the fitted policy encodes that by refusing everything
+rather than quietly lowering the bar. Compare with the old behaviour, where a
+single global threshold would have passed most of a transcript that is 29%
+wrong.
+
+## Two bugs worth recording, both caught by tests
+
+**Threshold selection was tie-unsafe.** Choosing the marginal item's score as
+the threshold reports the risk of a *prefix*, but `score >= threshold` admits
+every tied word too. Isotonic calibration produces plateaus, so ties are the
+norm rather than an edge case. Fixed by evaluating only at distinct score
+boundaries, over the whole admitted set; pinned by a property test that
+re-derives risk and coverage from the returned threshold on random tie-heavy
+data.
+
+**Unsmoothed isotonic destroys NCE while improving ECE.** Plain isotonic emits
+plateaus of exactly 0.0 and 1.0 — claims of certainty — and one held-out
+counterexample inside such a plateau craters any log-loss score. Measured
+here: NCE went from +0.148 to **−0.502** at 10 dB while ECE improved. Fixed
+with Laplace smoothing by plateau support, `(k+1)/(n+2)`, so a plateau resting
+on four observations is pulled toward 0.5 far harder than one resting on four
+hundred. That in turn exposed a third bug: the PAVA solver only merged on
+strict violation, leaving runs of equal values as singleton blocks, so every
+one was smoothed as though supported by a single observation.
+
+## Known limitation
+
+**The right policy depends on conditions the pipeline cannot yet detect.**
+Coverage at 2% risk runs from 90% on clean speech to zero at 0 dB, so
+`load_bundled_policy` deliberately takes an explicit condition and has no
+default — silently defaulting to `clean` would auto-accept most of a
+transcript that is 29% wrong. Estimating SNR (or picking a policy from
+observed score distribution) is the obvious next step.
+
 ## Config-change A/Bs
 
 `RobustnessConfig` defaults are load-bearing (VAD on, context carry off,
