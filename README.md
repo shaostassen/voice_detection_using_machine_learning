@@ -147,7 +147,25 @@ multilingual smoke study including Mandarin), WER degraded smoothly rather
 than collapsing into hallucinated text, and the confidence gate stays silent
 while WER ≤ 0.05 then flags every segment once it steps to 0.15.
 
-Two results went against expectations, and both are load-bearing:
+**Word-level reliability** — 73 utterances, ~1,160 words per condition. Can a
+confidence score rank *which* word is wrong, within a single noise condition?
+AUROC, 0.5 = chance:
+
+| SNR dB | WER | `words[].prob` | segment `confidence` |
+|---|---|---|---|
+| clean | 0.047 | **0.894** | 0.581 |
+| 10 | 0.076 | **0.856** | 0.693 |
+| 0 | 0.288 | **0.826** | 0.701 |
+| −5 | 0.670 | **0.762** | 0.681 |
+
+Per-word probability predicts errors well everywhere. The segment-level
+signal the flag currently uses does not — on clean audio it is near chance,
+because it is a per-window constant and cannot rank anything inside a window.
+Calibration of the per-word signal is good down to 0 dB (ECE 0.018–0.085) and
+fails below that (NCE −0.130 at −5 dB, while AUROC stays 0.762 — the ranking
+survives, the numbers stop meaning anything).
+
+Three results went against expectations, and all are load-bearing:
 
 - **The confidence gate was inert, and the obvious diagnosis was wrong.**
   The first sweep flagged nothing at any level, including −5 dB. That reads
@@ -160,6 +178,15 @@ Two results went against expectations, and both are load-bearing:
   isn't there.
 - **`--denoise` lost at every SNR**, by +0.02 to +0.15 WER, worst where it
   was supposed to help most. It stays off by default.
+- **Entropy did not beat probability.** The confidence literature reports
+  entropy-based estimators detecting errors 1.5–4× better for CTC and
+  transducer models; on Whisper all five estimators tested landed within
+  0.008 AUROC of each other. What helped instead was aggregation — taking the
+  **min** over a word's tokens rather than the mean, worth 10–25% in
+  error-detection precision, because a word is wrong if any one of its tokens
+  is and averaging dilutes that. Entropy also requires greedy decoding
+  (CTranslate2 returns no logits under beam search), so it costs beam-5 and
+  buys nothing.
 
 Single clip, single speaker: WER differences below ~0.05 are not resolvable
 here (RTF is steadier, ~2% run to run). These characterize behavior and

@@ -204,16 +204,29 @@
   </p>
   <ul class="sl-body">
     <li>
-      <b>The confidence gate was inert, and the fix was not the obvious
-      one.</b> Flagged-segment count was zero at every noise level, including
-      −5 dB where one word in three is wrong. The tempting read is that
-      <code>avg_logprob</code> is a bad signal. Measuring the distribution
-      instead of the flag count showed the opposite: confidence falls
-      monotonically with noise, 0.957 → 0.669, tracking the error rate
-      closely. The signal was fine. The threshold — 0.55 — sat <em>below the
-      worst value the model ever produced</em>, so it could not fire under
-      any condition. Raised to 0.85, which stays silent while word error is
-      ≤ 5% and fires the moment it reaches 15%.
+      <b>The confidence gate was inert, and chasing why exposed something
+      worse.</b> Flagged-segment count was zero at every noise level,
+      including −5 dB where one word in three is wrong. First diagnosis: the
+      threshold, 0.55, sat <em>below the lowest confidence the model ever
+      produces</em>, so it could never fire. Raising it to 0.85 made the flag
+      work — and was still wrong.
+      Reading faster-whisper's source showed why the confidence values had
+      looked so strangely uniform: <code>avg_logprob</code> is computed
+      <em>once per 30-second decode window</em> and copied onto every segment
+      from that window. A 130-second clip yields 22 segments and exactly 5
+      distinct values. The number the gate flags on is a per-window
+      judgement wearing a per-segment label, so inside a window it cannot
+      rank anything at all.
+    </li>
+    <li>
+      <b>The signal that works was already in the output, unread.</b>
+      Per-word token probabilities are computed by the decoder, serialized
+      into the JSON, and consumed by nothing. Labelling every word correct or
+      incorrect against a reference via Levenshtein backtrace, then measuring
+      how well each score ranks errors <em>within</em> a single noise
+      condition: per-word probability reaches AUROC 0.89 on clean audio,
+      against 0.58 for the segment signal the gate uses — near chance,
+      exactly where errors are rarest and a flag is most valuable.
     </li>
     <li>
       <b>The optional denoise stage made things worse.</b> Spectral gating
@@ -221,6 +234,16 @@
       rose at every level, and the gap widened as conditions got worse,
       reaching +15 points at −5 dB. It stays off by default and is not
       recommended at any SNR tested.
+    </li>
+    <li>
+      <b>A published result failed to replicate.</b> Entropy-based confidence
+      estimators are reported to detect errors 1.5–4× better than
+      probability-based ones — for CTC and transducer models. On Whisper,
+      five estimators landed within 0.008 AUROC of each other: no advantage
+      at all. What did help was the aggregation rather than the estimator —
+      taking the <em>minimum</em> over a word's tokens instead of the mean,
+      worth 10–25% in error-detection precision, since a word is wrong if any
+      one of its tokens is and averaging dilutes exactly that evidence.
     </li>
   </ul>
   <p class="sl-note">
