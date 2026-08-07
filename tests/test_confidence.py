@@ -9,7 +9,65 @@ import math
 import pytest
 
 from speechlens.confidence import (aurc, auroc, auc_nt, ece, nce,
-                                   risk_coverage, summarize)
+                                   normalized_entropy, renyi_entropy,
+                                   risk_coverage, shannon_entropy, summarize)
+
+
+# --- entropy ----------------------------------------------------------------
+
+def _uniform(n):
+    return [math.log(1.0 / n)] * n
+
+
+def _onehot(n):
+    return [0.0] + [-800.0] * (n - 1)   # log(1) and effectively log(0)
+
+
+def test_uniform_distribution_has_maximum_entropy():
+    for n in (2, 8, 64):
+        assert shannon_entropy(_uniform(n)) == pytest.approx(math.log(n))
+
+
+def test_certain_distribution_has_zero_entropy():
+    assert shannon_entropy(_onehot(50)) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_underflow_guard_does_not_produce_nan():
+    # log-probs from a 51k vocab routinely go below -700; exp() underflows and
+    # 0 * -inf would be nan without the guard.
+    lp = [0.0] + [-1e9] * 100
+    assert shannon_entropy(lp) == pytest.approx(0.0, abs=1e-9)
+    assert not math.isnan(renyi_entropy(lp, 2.0))
+
+
+def test_renyi_recovers_shannon_at_alpha_one():
+    lp = [math.log(p) for p in (0.5, 0.25, 0.15, 0.10)]
+    assert renyi_entropy(lp, 1.0) == pytest.approx(shannon_entropy(lp))
+
+
+def test_renyi_alpha_above_one_discounts_the_tail():
+    # A peaked head with a long flat tail: Renyi-2 should read as more
+    # confident (lower entropy) than Shannon, which spends range on the tail.
+    lp = [math.log(0.7)] + [math.log(0.3 / 200)] * 200
+    assert renyi_entropy(lp, 2.0) < shannon_entropy(lp)
+
+
+def test_renyi_rejects_nonpositive_alpha():
+    with pytest.raises(ValueError):
+        renyi_entropy(_uniform(4), 0.0)
+
+
+def test_normalized_entropy_is_confidence_oriented():
+    # Higher must mean MORE confident, matching every other estimator here.
+    # A mixed orientation shows up as AUROC < 0.5 and reads as a finding.
+    assert normalized_entropy(_onehot(64)) == pytest.approx(1.0, abs=1e-9)
+    assert normalized_entropy(_uniform(64)) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_normalized_entropy_stays_in_unit_range():
+    lp = [math.log(p) for p in (0.9, 0.05, 0.03, 0.02)]
+    v = normalized_entropy(lp)
+    assert 0.0 <= v <= 1.0
 
 
 # --- AUROC ------------------------------------------------------------------

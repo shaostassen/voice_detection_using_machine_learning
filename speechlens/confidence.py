@@ -23,6 +23,62 @@ import math
 from typing import Dict, List, Sequence, Tuple
 
 
+def shannon_entropy(logprobs: Sequence[float]) -> float:
+    """Entropy in nats of one decode step, from its full log-softmax row.
+
+    The chosen token's probability says how confident the model was in what it
+    picked; entropy says how spread the alternatives were. Those come apart
+    exactly where it matters — a token at p=0.6 with one plausible rival is a
+    different situation from p=0.6 with fifty.
+
+    Takes log-probabilities rather than raw logits so the caller normalizes
+    once. Reported in nats to match the log-space used everywhere else here.
+    """
+    total = 0.0
+    for lp in logprobs:
+        if lp > -700.0:                    # exp underflows below this
+            total -= math.exp(lp) * lp
+    return total
+
+
+def renyi_entropy(logprobs: Sequence[float], alpha: float = 2.0) -> float:
+    """Renyi entropy of order ``alpha``, in nats.
+
+    ``alpha > 1`` weights the dominant tokens more heavily, which the ASR
+    confidence literature reports as a better error detector than Shannon —
+    the tail of a 51k-token vocabulary is mostly noise, and Shannon spends its
+    dynamic range on it. ``alpha -> 1`` recovers Shannon.
+    """
+    if alpha <= 0:
+        raise ValueError("alpha must be positive")
+    if abs(alpha - 1.0) < 1e-9:
+        return shannon_entropy(logprobs)
+    acc = 0.0
+    for lp in logprobs:
+        if lp > -700.0:
+            acc += math.exp(alpha * lp)
+    if acc <= 0.0:
+        return 0.0
+    return math.log(acc) / (1.0 - alpha)
+
+
+def normalized_entropy(logprobs: Sequence[float], alpha: float = 1.0) -> float:
+    """Entropy rescaled to [0, 1] so it is comparable with a probability.
+
+    Divides by ``log(vocab_size)``, the entropy of the uniform distribution,
+    then flips the sign so **higher means more confident**. That orientation
+    matters: every other estimator here is "bigger is better", and a metric
+    sweep that silently mixes orientations produces an AUROC below 0.5 that
+    looks like a finding instead of a bug.
+    """
+    n = len(logprobs)
+    if n <= 1:
+        return 1.0
+    ent = (shannon_entropy(logprobs) if abs(alpha - 1.0) < 1e-9
+           else renyi_entropy(logprobs, alpha))
+    return max(0.0, min(1.0, 1.0 - ent / math.log(n)))
+
+
 def _check(scores: Sequence[float], correct: Sequence[bool]) -> None:
     if len(scores) != len(correct):
         raise ValueError(f"length mismatch: {len(scores)} scores, "
