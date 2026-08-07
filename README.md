@@ -193,6 +193,45 @@ here (RTF is steadier, ~2% run to run). These characterize behavior and
 cost; they are not corpus benchmarks. Jetson Orin Nano numbers are still
 pending.
 
+## Per-word reliability
+
+The segment flag answers "is this chunk of audio bad?". The reliability layer
+answers the question you actually have — "which words should I not trust?" —
+by calibrating the per-word probability against measured correctness and
+picking a threshold from a tolerated error rate.
+
+```bash
+speechlens analyze clip.wav --reliability clean
+```
+
+```
+[00:16.82 -> 00:22.54] (0.83)  [!] before us, similarly he's drawn from eating and its results...
+
+Reliability (clean policy, 2% target error): 52/60 words auto-accepted (87%), 8 need review
+  review: Mr.(0.74) middle(0.75) is(0.69) matter.(0.74) roast(0.71) similarly(0.57) he's(0.74) and(0.75)
+```
+
+The reference reads *"similes drawn from eating"*; `base` heard *"similarly
+he's drawn"*. Both wrong words are in the review list and `similarly` scores
+lowest of all 60. Meanwhile the segment gate marked **all four segments**
+`[!]` at an identical `0.83` — that repeated value is the per-window constant,
+saying "everything is suspect" about a transcript that is 95% correct.
+
+Pick the policy that matches your audio (`clean, 20, 10, 5, 0, -5` dB SNR).
+There is deliberately no default: at 2% tolerated error, coverage runs from
+90% on clean speech to **zero** at 0 dB, so defaulting to `clean` would
+auto-accept most of a transcript that is 29% wrong. Full operating points and
+the calibration method are in [`docs/VALIDATION.md`](docs/VALIDATION.md).
+
+In Python, and over HTTP via a `reliability` form field:
+
+```python
+from speechlens.calibration import load_bundled_policy
+lens = SpeechLens(model_size="small", policy=load_bundled_policy("clean"))
+result = lens.analyze("clip.wav", cfg=RobustnessConfig(word_timestamps=True))
+result.reliability          # coverage, threshold, words needing review
+```
+
 ## Validation runbook
 
 Unit and component tests (no weights, no GPU, run anywhere):
