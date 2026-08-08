@@ -98,7 +98,12 @@ def nearest_condition(snr_db: Optional[float],
 
     ``None`` in gives ``None`` out: no estimate means no automatic choice.
     """
-    if snr_db is None or not conditions:
+    # NaN as well as None. NaN arrives from any aggregation over an empty set
+    # of estimates — e.g. averaging per-utterance SNRs when every one declined,
+    # which is exactly what babble noise causes. Left unguarded, NaN compares
+    # false against everything, the sort keeps insertion order, and the
+    # function silently returns a policy instead of abstaining.
+    if snr_db is None or snr_db != snr_db or not conditions:
         return None
 
     scored = []

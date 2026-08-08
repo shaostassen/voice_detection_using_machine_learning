@@ -1,0 +1,45 @@
+study=reliability  hardware=AMD Ryzen 9 9950X 16-Core Processor (Linux x86_64)  model=large-v3  device=cpu  compute_type=int8  date=2026-08-08
+cmd: python scripts/reliability.py --corpus librispeech --noise babble --model large-v3 --device cpu --compute-type int8 --limit 73 --json /tmp/rel_babble.json
+
+corpus: librispeech — 73 utterances, 8.0 min audio
+accents: read/US
+noise: babble   ladder: [None, 20, 10, 5, 0, -5]
+
+  clean dB  wer=0.047  words=1157
+     20 dB  wer=0.047  words=1152
+     10 dB  wer=0.056  words=1145
+      5 dB  wer=0.112  words=1145
+      0 dB  wer=0.516  words=1129
+     -5 dB  wer=0.996  words=1205
+
+==============================================================================
+WITHIN-CONDITION AUROC — can the score rank errors below correct words?
+0.5 is chance. This is the number the project turns on.
+==============================================================================
+ SNR dB    wer    acc      word_prob       seg_conf   seg_min_word    speech_prob
+  clean  0.047  0.957          0.894          0.581          0.642          0.533
+     20  0.047  0.956          0.859          0.614          0.636          0.595
+     10  0.056  0.951          0.837          0.587          0.563          0.513
+      5  0.112  0.902          0.870          0.706          0.657          0.630
+      0  0.516  0.593          0.828          0.772          0.696          0.707
+     -5  0.996  0.118          0.591          0.660          0.512          0.611
+
+AUC-NT (precision/recall for errors; chance = corpus error rate)
+ SNR dB  chance      word_prob       seg_conf   seg_min_word    speech_prob
+  clean   0.043          0.316          0.227          0.200          0.207
+     20   0.044          0.235          0.145          0.081          0.123
+     10   0.049          0.240          0.090          0.056          0.072
+      5   0.098          0.467          0.224          0.156          0.169
+      0   0.407          0.742          0.678          0.601          0.616
+     -5   0.882          0.907          0.918          0.894          0.916
+
+Calibration of the per-word signal (ECE / NCE, word_prob)
+ SNR dB      ECE      NCE     AURC
+  clean    0.018    0.249    0.006
+     20    0.016   -0.080    0.015
+     10    0.020    0.040    0.016
+      5    0.019    0.203    0.025
+      0    0.139    0.021    0.188
+     -5    0.489   -3.679    0.858
+
+raw pairs -> /tmp/rel_babble.json

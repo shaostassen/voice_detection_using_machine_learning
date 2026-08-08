@@ -109,3 +109,15 @@ def test_ties_resolve_to_the_noisier_policy():
 def test_no_estimate_means_no_automatic_choice():
     assert nearest_condition(None, CONDS) is None
     assert nearest_condition(10.0, []) is None
+
+
+def test_nan_abstains_instead_of_picking_a_policy():
+    # NaN arrives from averaging over an empty set of estimates, which is what
+    # babble noise produces: it fills the silences, the VAD finds no
+    # noise-only region, and every per-utterance estimate declines. NaN
+    # compares false against everything, so an unguarded sort keeps insertion
+    # order and silently returns a policy. Abstaining is the only honest
+    # answer, and the noisiest policy is not a safe default either — it
+    # accepts nothing, which looks like "audio is terrible" rather than
+    # "SNR is unknown".
+    assert nearest_condition(float("nan"), CONDS) is None

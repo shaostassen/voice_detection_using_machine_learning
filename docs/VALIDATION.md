@@ -794,17 +794,86 @@ Worth noting: EdAcc's own-corpus ECE (0.009–0.021) is *better* than
 LibriSpeech's (0.022–0.032). The corpus is not intrinsically harder to
 calibrate; it is the transfer that hurts.
 
+---
+
+# Run — 2026-08-07 — babble noise: where the method breaks
+
+| field | value |
+|---|---|
+| hardware | AMD Ryzen 9 9950X, `large-v3` int8, beam-5 |
+| corpus | LibriSpeech, 73 utterances (identical to the white-noise run) |
+| noise | **babble** — six overlapping voices drawn from the corpus itself |
+| raw log | [`validation_runs/reliability_babble.txt`](validation_runs/reliability_babble.txt) |
+
+White noise is flat and stationary, the easiest case for both the decoder and
+an energy-based SNR estimate. Babble has real speech spectrum and real temporal
+modulation, and is the standard realistic hard case.
+
+| SNR dB | WER babble | WER white | `word_prob` AUROC | `seg_conf` AUROC |
+|---|---|---|---|---|
+| clean | 0.047 | 0.047 | 0.894 | 0.581 |
+| 20 | **0.047** | 0.064 | 0.859 | 0.614 |
+| 10 | **0.056** | 0.076 | 0.837 | 0.587 |
+| 5 | 0.112 | 0.117 | 0.870 | 0.706 |
+| 0 | **0.516** | 0.288 | 0.828 | 0.772 |
+| −5 | **0.996** | 0.670 | **0.591** | 0.660 |
+
+**Babble is gentler at high SNR and catastrophic at low SNR.** At 20 and 10 dB
+it costs *less* WER than white noise (0.047 vs 0.064; 0.056 vs 0.076) — it has
+temporal gaps the decoder can hear through, where white noise fills every one.
+Below 5 dB that reverses hard: 1.8× the WER at 0 dB, and at −5 dB the
+transcript is essentially destroyed (WER 0.996, word accuracy 0.118).
+
+**The confidence signal fails in exactly one condition, and it is this one.**
+`word_prob` AUROC holds at 0.83–0.89 down through 0 dB, then collapses to
+**0.591** at −5 dB babble — near chance, the only such reading in any run. The
+mechanism is legible: with six voices at equal power the model is confidently
+transcribing *a* speaker, just not the target one. From the decoder's point of
+view nothing went wrong, so its confidence carries no signal about an error
+defined against a different talker. This is also the only cell where
+`seg_conf` (0.660) beats `word_prob`.
+
+**Boundary condition, stated plainly:** per-word confidence predicts errors
+across every condition tested *except* speech-shaped interference severe
+enough that the model is transcribing the wrong voice. That is a real limit of
+the method, not a tuning problem.
+
+## Babble also defeats automatic policy selection
+
+Tested directly, mean estimate over 5 utterances:
+
+| true SNR | white: estimate → policy | babble: estimate → policy |
+|---|---|---|
+| 20 | 20.1 → `20` ✓ | 21.4 → `20` ✓ |
+| 10 | 10.5 → `10` ✓ | 12.9 → `10` ✓ |
+| 5 | 5.3 → `5` ✓ | **no estimate** |
+| 0 | 0.4 → `0` ✓ | **no estimate** |
+| −5 | −4.5 → `−5` ✓ | **no estimate** |
+
+At and below 5 dB, babble fills the silences, the VAD finds no noise-only
+region, and `estimate_snr` returns `None` for every utterance — it declines
+rather than inventing a number, which is the designed behaviour. But the
+consequence is that `--reliability auto` applies **no policy at all** in
+precisely the conditions where a policy matters most. Honest, and a real gap:
+an estimator that does not depend on finding silence (spectral-subtraction or
+a learned SNR head) is the fix.
+
+**This test also found a latent bug.** Averaging per-utterance estimates when
+all of them declined yields `NaN`, and `NaN` compares false against
+everything, so the sort in `nearest_condition` kept insertion order and
+silently returned a policy. Now guarded and pinned by a test — the noisiest
+policy is not a safe default either, since it accepts nothing and so reads as
+"this audio is terrible" rather than "the SNR is unknown".
+
 ## What still isn't established
 
-- **Noise realism.** Both runs use additive white noise. Pink and babble
-  mixers exist ([`scripts/corpora.py`](../scripts/corpora.py)); babble is
-  built from the corpus itself and is deliberately adversarial for the SNR
-  estimator, since babble in a silent stretch can read as speech to a VAD.
-  Results pending.
 - **Deletions remain invisible.** A dropped word leaves no token to score.
   Structural to per-word confidence, and EdAcc makes it more visible because
   Whisper deletes fillers wholesale.
-- Two corpora, both English. No claim beyond that.
+- **SNR estimation without a silence sample** — needed for babble-like
+  conditions, per the table above.
+- Two corpora, both English; three synthetic noise types, no recorded noise.
+  No claim beyond that.
 
 ## Config-change A/Bs
 
