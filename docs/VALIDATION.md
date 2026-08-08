@@ -701,6 +701,111 @@ noise from — `auto` applies **no policy** and says so in the warnings, rather
 than falling back to `clean`. A missing annotation is recoverable; a
 fabricated one silently auto-accepts a transcript that might be 29% wrong.
 
+---
+
+# Run — 2026-08-07 — second corpus: does any of this generalize?
+
+| field | value |
+|---|---|
+| hardware | AMD Ryzen 9 9950X, `large-v3` int8, beam-5 |
+| corpus | **EdAcc** (Edinburgh International Accents of English), test split |
+| sample | 100 utterances, 26.9 min, ~3,470 words per condition |
+| accents | Bulgarian, Catalan, Chinese, Eastern European, French, Scottish, … |
+| loader | [`scripts/corpora.py`](../scripts/corpora.py) |
+| raw log | [`validation_runs/reliability_edacc.txt`](validation_runs/reliability_edacc.txt) |
+
+Everything before this came from one corpus of read, scripted, studio-clean
+English. EdAcc changes every axis that could have been carrying the result:
+**spontaneous** dyadic conversation, **real recording conditions**, and L1/L2
+accent variety.
+
+Three loader details that would otherwise have silently corrupted the run:
+EdAcc marks non-scoring stretches with `IGNORE_TIME_SEGMENT_IN_SCORING` (left
+in, they compare a transcript against a placeholder and report a meaningless
+WER); streaming yields utterances grouped by conversation, so taking the first
+100 samples *one speaker* and would have produced an "accent diversity" result
+from a single Scottish talker; and the audio is 32 kHz with a 2.0 s median
+duration, a third of it under one second.
+
+## Within-condition AUROC — EdAcc vs LibriSpeech
+
+| SNR dB | EdAcc WER | EdAcc `word_prob` | LibriSpeech `word_prob` | EdAcc `seg_conf` |
+|---|---|---|---|---|
+| clean | 0.153 | **0.824** | 0.894 | 0.621 |
+| 20 | 0.167 | **0.845** | 0.883 | 0.644 |
+| 10 | 0.191 | **0.858** | 0.856 | 0.661 |
+| 5 | 0.212 | **0.855** | 0.850 | 0.696 |
+| 0 | 0.276 | **0.838** | 0.826 | 0.739 |
+| −5 | 0.379 | **0.819** | 0.762 | 0.755 |
+
+**The core finding replicates.** Per-word probability ranks errors at
+AUROC 0.82–0.86 on spontaneous accented speech, and the segment signal the old
+gate used remains far worse everywhere — 0.824 vs 0.621 on clean audio, the
+same shape of gap seen on LibriSpeech.
+
+It is in fact **more stable** here: 0.82–0.86 across the whole ladder against
+LibriSpeech's 0.76–0.89, and *better* at −5 dB (0.819 vs 0.762). Harder audio
+to begin with leaves less headroom for added noise to destroy.
+
+**A prediction that checked out.** EdAcc's clean WER is 0.153, three times
+LibriSpeech's 0.047 — but word-level *accuracy* is 0.951 against 0.957,
+essentially identical. Measured beforehand: 4.6% of EdAcc reference words are
+fillers (`uh` 102, `um` 68 in the sample), and Whisper performs implicit
+disfluency removal. Those become deletions, which inflate WER while producing
+no hypothesis word to score. The WER gap is largely a transcription-convention
+mismatch, not a confidence-quality difference — which is why it was worth
+measuring before seeing the results rather than reaching for afterwards.
+
+## The decisive test: does a fitted policy transfer?
+
+AUROC replicating is necessary but not sufficient. The question that decides
+whether the shipped policies are honest is: **at a promised 2% error rate,
+what error does a LibriSpeech-fitted policy actually deliver on EdAcc?**
+
+| cond | ECE, own fit | ECE, transferred | promised | **delivered** | coverage |
+|---|---|---|---|---|---|
+| clean | 0.009 | 0.028 | 2.0% | **2.8%** | 87.8% |
+| 20 | 0.017 | 0.051 | 2.0% | **2.4%** | 80.8% |
+| 10 | 0.012 | 0.074 | 2.0% | **1.7%** | 58.1% |
+| 5 | 0.017 | 0.067 | 2.0% | **1.2%** | 47.4% |
+| 0 | 0.015 | 0.115 | 2.0% | — | 0% |
+| −5 | 0.021 | 0.221 | 2.0% | — | 0% |
+
+**The decision transfers; the probability does not.** Two different things
+come apart here and conflating them would be the easy mistake:
+
+- **The accept/reject gate holds.** Delivered risk is 1.2–2.8% against a 2.0%
+  promise. The worst case overshoots by 0.8 points; the rest come in at or
+  under target. Coverage drops (87.8% vs 90.4% on clean, 58.1% vs 77.8% at
+  10 dB), so transfer costs throughput and errs conservative — the right
+  direction to fail in.
+- **The calibrated number does not hold.** Transferred ECE is 3–10× worse than
+  an EdAcc-native fit, degrading as noise rises (0.009 → 0.028 clean;
+  0.021 → 0.221 at −5 dB). So *"this word is 87% likely correct"* is
+  materially wrong on an unseen corpus even while the gate built on it still
+  works.
+
+Practical consequence: **use the shipped policies as a gate, not as a
+displayed probability.** If a downstream consumer needs the number itself to
+mean something, refit on data from its own domain — which is cheap, since
+`scripts/reliability.py` plus `scripts/fit_policy.py` is the whole pipeline.
+
+Worth noting: EdAcc's own-corpus ECE (0.009–0.021) is *better* than
+LibriSpeech's (0.022–0.032). The corpus is not intrinsically harder to
+calibrate; it is the transfer that hurts.
+
+## What still isn't established
+
+- **Noise realism.** Both runs use additive white noise. Pink and babble
+  mixers exist ([`scripts/corpora.py`](../scripts/corpora.py)); babble is
+  built from the corpus itself and is deliberately adversarial for the SNR
+  estimator, since babble in a silent stretch can read as speech to a VAD.
+  Results pending.
+- **Deletions remain invisible.** A dropped word leaves no token to score.
+  Structural to per-word confidence, and EdAcc makes it more visible because
+  Whisper deletes fillers wholesale.
+- Two corpora, both English. No claim beyond that.
+
 ## Config-change A/Bs
 
 `RobustnessConfig` defaults are load-bearing (VAD on, context carry off,

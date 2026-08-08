@@ -1,0 +1,47 @@
+study=reliability  hardware=AMD Ryzen 9 9950X 16-Core Processor (Linux x86_64)  model=large-v3  device=cpu  compute_type=int8  date=2026-08-07
+cmd: python scripts/reliability.py --corpus edacc --noise white --model large-v3 --device cpu --compute-type int8 --limit 100 --json /tmp/rel_edacc.json
+
+corpus: edacc — 100 utterances, 26.9 min audio
+accents: Bulgarian, Catalan, Chinese, Don't know, Eastern European, French ...
+noise: white   ladder: [None, 20, 10, 5, 0, -5]
+
+  clean dB  wer=0.153  words=3505
+     20 dB  wer=0.167  words=3473
+     10 dB  wer=0.191  words=3458
+      5 dB  wer=0.212  words=3466
+      0 dB  wer=0.276  words=3445
+     -5 dB  wer=0.379  words=3403
+
+1 words dropped (normalized to nothing, e.g. bare punctuation) — no evidence to label them with
+
+==============================================================================
+WITHIN-CONDITION AUROC — can the score rank errors below correct words?
+0.5 is chance. This is the number the project turns on.
+==============================================================================
+ SNR dB    wer    acc      word_prob       seg_conf   seg_min_word    speech_prob
+  clean  0.153  0.951          0.824          0.621          0.578          0.503
+     20  0.167  0.944          0.845          0.644          0.610          0.472
+     10  0.191  0.924          0.858          0.661          0.631          0.490
+      5  0.212  0.902          0.855          0.696          0.669          0.486
+      0  0.276  0.843          0.838          0.739          0.626          0.525
+     -5  0.379  0.743          0.819          0.755          0.658          0.452
+
+AUC-NT (precision/recall for errors; chance = corpus error rate)
+ SNR dB  chance      word_prob       seg_conf   seg_min_word    speech_prob
+  clean   0.049          0.185          0.133          0.061          0.063
+     20   0.056          0.232          0.147          0.104          0.063
+     10   0.076          0.313          0.242          0.126          0.080
+      5   0.098          0.397          0.317          0.190          0.110
+      0   0.157          0.479          0.450          0.248          0.157
+     -5   0.257          0.588          0.573          0.359          0.234
+
+Calibration of the per-word signal (ECE / NCE, word_prob)
+ SNR dB      ECE      NCE     AURC
+  clean    0.038   -0.221    0.014
+     20    0.037    0.032    0.013
+     10    0.036    0.123    0.018
+      5    0.042    0.202    0.023
+      0    0.038    0.205    0.048
+     -5    0.052    0.166    0.100
+
+raw pairs -> /tmp/rel_edacc.json
