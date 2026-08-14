@@ -139,8 +139,8 @@ harmful exactly where it was supposed to help** — the gap widens as SNR
 falls, reaching +0.15 WER at −5 dB. It also degraded LID confidence at −5 dB
 (0.63 with, 0.77 without).
 
-This is stronger than the prior recorded in CLAUDE.md ("denoise loses above
-~5 dB SNR"). The prior expected a crossover where spectral gating starts
+This is stronger than the working prior going in, which was that denoise
+loses above ~5 dB SNR. That prior expected a crossover where spectral gating starts
 paying off at low SNR; there is no crossover in this data. Spectral gating
 smears the formants Whisper relies on, and Whisper's noise robustness is
 already better than the filter's. **Keep `denoise=False` as the default;
