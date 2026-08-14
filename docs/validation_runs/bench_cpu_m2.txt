@@ -1,5 +1,11 @@
 study=bench  hardware=Apple M2 (Darwin arm64)  model=base,small,distil-large-v3  device=cpu  compute_type=int8  date=2026-08-02
-cmd: python scripts/validate.py bench /private/tmp/claude-501/-Users-shao-stassen-Documents-Code-voice-detection-using-machine-learning/a35ad2be-fe47-4f44-80f9-cc3a6f559cc4/scratchpad/librispeech_3utt_23s.wav --models base,small,distil-large-v3 --device cpu --compute-type int8
+cmd: python scripts/validate.py bench <TMPDIR>/librispeech_3utt_23s.wav --models base,small,distil-large-v3 --device cpu --compute-type int8
+
+[The clip path in the line above is redacted: it was a machine-local temp directory
+ and nothing else in this file is altered. Rebuild the clip anywhere with
+ `python scripts/make_clip.py <path>` — it is byte-identical by construction, which
+ is what makes this run comparable with the T4 and 9950X benches. The measurements
+ below are the original stdout.]
 
 audio: 23.2s
                model      rtf  x realtime
