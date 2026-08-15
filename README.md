@@ -288,6 +288,27 @@ The same code runs on a Jetson Orin Nano: use `--model small
 Silero VAD runs on CPU via onnxruntime either way. Expect roughly real-time
 with `small` on the Orin Nano, far faster on desktop GPUs.
 
+## Companion project — SpeechForge
+
+[**SpeechForge**](https://github.com/shaostassen/speechforge) is the synthesis half:
+zero-shot voice cloning with an evaluation harness that consumes this package. The
+dependency runs one way — SpeechForge imports `metrics.wer`, `metrics.labels_for_words`,
+all of `confidence` and `calibration`, and the per-word reliability policies — because
+**WER of an ASR run over synthesized speech is the field-standard intelligibility
+metric**, and reusing a validated implementation beats writing a second one.
+
+The repos stay separate so this one keeps its hard no-torch ceiling, which is what
+holds the install lean and the tests weight-free. SpeechForge needs torch for every
+backend it drives, so merging them would break the invariant that makes this package
+worth depending on.
+
+Two findings there feed back here. Per-word confidence **does not** separate synthetic
+from real speech when the word is transcribed correctly, so the reliability policies
+below measure acoustic-lexical fit rather than provenance — they are not a deepfake
+detector. And corpus transcripts shipped in unpunctuated `ALL CAPS` cost an
+autoregressive TTS up to 5x WER, which is a caution about feeding scoring-format text
+to any generative model.
+
 ## Extension seams
 
 - **ECAPA-TDNN LID fusion**: `lid.fuse_distributions` already fuses arbitrary
