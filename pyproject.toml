@@ -7,6 +7,8 @@ name = "speechlens"
 version = "0.1.0"
 description = "Local language identification + robust transcription (faster-whisper) with an explicit anti-hallucination harness"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
