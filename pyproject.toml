@@ -22,6 +22,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 denoise = ["noisereduce>=3.0"]
+# Speaker enrol/identify/verify with a pretrained ECAPA-TDNN. Pulls in torch, so
+# it is opt-in: the core install keeps its no-torch ceiling.
+speaker = ["speechbrain>=1.0", "torch>=2.0"]
 
 [project.scripts]
 speechlens = "speechlens.cli:main"

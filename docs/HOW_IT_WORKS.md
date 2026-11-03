@@ -196,20 +196,59 @@ numbers say anything about real people.
   without their knowledge is the use to avoid. Enrolling yourself, or
   people who have agreed, is fine.
 
-### Tools if you want the real thing
+### Doing it for real: `speechlens.speaker`
 
-- **SpeechBrain** — pretrained ECAPA-TDNN speaker verification
-  (`speechbrain/spkrec-ecapa-voxceleb`).
-- **pyannote.audio** — speaker diarization and embeddings.
-- **Resemblyzer** — a lightweight d-vector embedder.
+`speechlens/speaker.py` is the enrol/identify/verify logic around a pluggable
+encoder (any callable `(audio, sr) -> vector`, the same interface SpeechForge's
+`SpeakerEncoder` uses). It has no neural network in it, so it imports without
+torch. For a real encoder, install the opt-in extra, which brings SpeechBrain's
+pretrained ECAPA-TDNN:
 
-All need PyTorch, so none are added here: this package keeps a deliberate
-no-torch ceiling (see the SpeechForge note in the README). The clean seam is
-the one the README names — diarization turns compose with the per-segment
-schema, so "who said each segment" can be attached to `AnalysisResult`
-without touching the ASR path.
+```bash
+pip install -e ".[speaker]"          # speechbrain + torch; weights download from Hugging Face
+speechlens speaker enroll   --gallery people.npz --name me  me1.wav me2.wav me3.wav
+speechlens speaker identify --gallery people.npz unknown.wav
+speechlens speaker identify --gallery people.npz unknown.wav --threshold 0.55   # open-set: allow "none"
+speechlens speaker verify   --gallery people.npz --name me --threshold 0.55 claim.wav
+```
 
----
+```python
+from speechlens.speaker import Gallery, speechbrain_encoder, threshold_for_far, cosine
+
+enc = speechbrain_encoder()
+g = Gallery(enc, encoder_id="speechbrain:ecapa-voxceleb")
+for clip, sr in my_clips:                 # 3-5 clips, varied conditions
+    g.enroll("me", clip, sr)
+name, score, ranking = g.identify(new_clip, sr)
+```
+
+Design decisions that are easy to get wrong, enforced in code:
+
+- **No default threshold.** Cosine scores belong to an encoder and to your
+  audio. SpeechForge measured same-speaker pairs at 0.89–0.98 on its encoder,
+  against 0.69–0.76 reported in papers — a threshold copied from one would
+  have fired on every valid pair. `verify` requires a threshold, and
+  `threshold_for_far(impostor_scores, far)` derives one from impostor scores
+  you collect: score recordings of *different* people against your gallery, then
+  pick the false-accept rate you can live with. It refuses a target the sample
+  is too small to resolve (FAR 0.1% needs ≥ 1,000 impostor trials).
+  `equal_error_rate` summarises how separable your scores are.
+- **`identify` is closed-set by default**: it names the nearest enrolled
+  speaker even for a total stranger. Pass `--threshold` for "none of them".
+- **A gallery is tied to its encoder** and `Gallery.load` refuses a mismatch.
+- **Enrolling several clips** and comparing to their centroid beats one clip.
+
+**What has and has not been tested.** The gallery, scoring, calibration and
+persistence logic is covered by offline tests (`tests/test_speaker.py`) using a
+toy encoder on synthetic voices; a mutation of the FAR threshold's off-by-one
+makes them fail. The ECAPA adapter and the CLI paths that load it were **not**
+run against real weights here — the sandbox this was written in cannot reach
+Hugging Face. Treat the first real run as the validation, and measure your own
+EER before trusting a threshold.
+
+**Diarization** ("who spoke when") is a different tool:
+`pyannote.audio`. Its speaker turns compose with the per-segment transcript
+schema; that is not wired in.
 
 ## 3. Can my voice be cloned?
 
@@ -232,38 +271,94 @@ Cloning adds one input: a description of **whose voice**. Two approaches:
 
 - **Zero-shot / few-shot.** A speaker encoder (section 2's embedding, or the
   reference audio itself fed in as a prompt) conditions the acoustic model.
-  No training on your voice; you hand it 3–30 seconds and it imitates timbre.
-  Examples: XTTS-v2, F5-TTS, OpenVoice. Quick, but it captures timbre better
-  than speaking style, and results vary by model.
+  No training on your voice; you hand it a few seconds to a few tens of
+  seconds and it imitates timbre. It captures timbre better than speaking
+  style, and results vary a lot by model and by reference.
 - **Fine-tuning.** Train or adapt a model on 10 minutes to a few hours of your
   speech (VITS-family models, RVC for voice conversion). More work, more
   faithful, and much better at your rhythm and expressiveness.
 
-Check each model's licence — several popular ones restrict commercial use.
+**Licences live in the weights, not the code.** This matters for what you may
+do with the output. From SpeechForge's audit (`docs/LICENSES.md` there, dated
+2026-08-07 — re-check before relying on it): Chatterbox is MIT for code *and*
+weights; CosyVoice 2 is Apache-2.0 for both; F5-TTS has MIT code but
+`cc-by-nc-4.0` weights; XTTS-v2 is non-commercial for the model *and its
+outputs*. Chatterbox also watermarks every output, unconditionally. For a
+personal clone of your own voice almost any of these is fine; for anything you
+sell or publish, read the weights licence.
 
 ### Doing it well (your voice, your consent)
 
-- Record in a quiet room, a consistent mic position, no music/reverb. Clean
-  input is the biggest quality lever, ahead of model choice.
-- Include varied sentences and emotions, not just a monotone read.
-- Give the model *text with punctuation*. The SpeechForge project found
-  unpunctuated `ALL CAPS` transcripts cost an autoregressive TTS up to 5× WER.
+All of this is measured or enforced in SpeechForge's `reference.py`, not just
+folklore:
+
+- **The reference clip decides quality, more than the model.** Noise, room
+  tone and microphone are cloned along with your voice, because they land in
+  the speaker embedding. A clean 10 s clip beats two noisy minutes.
+- **Trim trailing silence.** Continuation-style models treat the reference as
+  a literal prefix, so trailing room tone becomes the start of what they say.
+- **Reference length is model-specific.** "About 10 s" is CosyVoice's advice;
+  applied to Chatterbox it cost 24% relative WER on the clips it truncated
+  (a 20 s cap was the measured optimum there). Do not assume.
+- **Give the model ordinary prose.** Passing corpus-style `ALL CAPS` text to
+  Chatterbox gave WER 0.112 vs 0.022 in sentence case on the same
+  LibriSpeech utterances (n=60, SpeechForge's measurement). Punctuate your
+  input.
+- Record varied sentences and emotions, not a monotone read.
 
 ### Measuring a clone
 
-The two earlier sections are the evaluation harness:
+The earlier sections are the evaluation harness, and SpeechForge already
+implements it:
 
 - **Intelligibility:** transcribe the synthesised audio with this package and
-  compute WER against the input text (`speechlens.metrics`). This is the
-  field-standard metric and is exactly what the companion project
-  [SpeechForge](https://github.com/shaostassen/speechforge) does.
-- **Similarity:** embed the real recording and the clone with a speaker
-  encoder (section 2) and compare — the same cosine score that decides
-  "is this the same person?" decides "is this a good clone?". Which is also
-  why a good enough clone can pass speaker verification.
+  compute WER against the input text (`speechlens.metrics`).
+- **Similarity:** embed a *held-out real recording* of you and the clone
+  with a speaker encoder and take the cosine. Use a recording the clone was
+  **not** conditioned on — scoring against the reference clip itself (SIM-r)
+  inflates the number, and SpeechForge's `sim_o` raises if you do it by mistake.
+- **Always score the real recordings the same way** and read the clone against
+  that ground-truth row. Similarity has no universal ceiling: it depends on the
+  encoder and the speaker, and a WER *below* the real-speech row means the
+  comparison has stopped measuring intelligibility. SpeechForge's reported
+  LibriSpeech numbers, for orientation (their README, not re-run here):
 
-SpeechForge is the right place to build the cloning side: it already consumes
-this package. This repo stays torch-free on purpose.
+  | | WER (Whisper) | speaker similarity |
+  |---|---|---|
+  | real speech (ground truth) | 0.021 | 0.964 |
+  | Chatterbox, sentence case | 0.022 | 0.949 |
+  | CosyVoice 2, no truncation | 0.036 | 0.958 |
+
+The consequence cuts both ways: a good enough clone scores close to the real
+you, which is exactly why it can also pass a speaker-verification check.
+
+### A concrete workflow with SpeechForge
+
+SpeechForge is a separate repository
+([shaostassen/speechforge](https://github.com/shaostassen/speechforge)) so this
+package keeps its no-torch ceiling. Its core API, as of its current `main`:
+
+```python
+import soundfile as sf
+from speechforge.synth import load_backend, clone
+from speechforge.text import sentence_case
+
+ref, sr = sf.read("my_voice.wav")                 # your own clean recording, MONO
+                                                   # (reference prep flattens channels)
+backend = load_backend("chatterbox", device="cpu")  # pip install -e ".[chatterbox]"
+audio, out_sr, report = clone(
+    backend, sentence_case("Hello, this is a synthetic copy of my voice."),
+    ref, sr, out_path="clone.wav", seed=0)
+print(report)                                      # what was trimmed/capped, and warnings
+```
+
+then score it with `speechforge.evaluate.sim_o` (similarity against a held-out
+recording of you) and this package's `analyze`/`metrics` (WER). The
+end-to-end protocol, including the ground-truth row, is
+`scripts/eval_zeroshot.py` there. I read these signatures from its source; I
+did not run synthesis here — no GPU, no model weights, and Hugging Face is not
+reachable from this sandbox. Chatterbox on CPU measured about 2× *slower* than
+realtime in SpeechForge's own bench, so budget for that.
 
 ### Risks, and what to do about them
 
@@ -289,8 +384,8 @@ this package. This repo stays torch-free on purpose.
 | see sound → mel yourself | `python scripts/explain.py stages --audio your.wav` |
 | transcribe | `speechlens analyze clip.wav --model small` |
 | know which words to trust | `speechlens analyze clip.wav --reliability auto` |
-| identify speakers properly | add SpeechBrain ECAPA or pyannote (torch) beside, not inside, this package |
-| clone your voice | SpeechForge, then score it with section 3's two metrics |
+| identify speakers properly | `pip install -e ".[speaker]"`, then `speechlens speaker enroll/identify/verify`; calibrate your own threshold |
+| clone your voice | SpeechForge (section 3 workflow), then score WER + held-out similarity |
 
 Further reading: Radford et al. 2022, *Robust Speech Recognition via
 Large-Scale Weak Supervision* (Whisper); Desplanques et al. 2020, *ECAPA-TDNN*;

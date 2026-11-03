@@ -14,6 +14,10 @@ with a temperature fallback ladder, repetition and no-speech gates, and
 confidence flagging so low-quality output is marked instead of
 silently trusted.
 
+Speaker enrol / identify / verify is available behind an opt-in extra
+(`pip install -e ".[speaker]"`, then `speechlens speaker --help`); it pulls in
+torch, so the core install is unchanged.
+
 New to how any of this works? [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md)
 explains how sound becomes text, whether a voice can identify a person, and what
 voice cloning involves — with runnable NumPy demos (`scripts/explain.py`).
@@ -339,6 +343,7 @@ speechlens/
 │   ├── metrics.py     WER / CER
 │   ├── synth.py       toy source-filter voice (teaching + offline tests)
 │   ├── voiceprint.py  toy MFCC speaker identification (teaching, not security)
+│   ├── speaker.py     enrol / identify / verify + threshold calibration (pluggable encoder)
 │   ├── cli.py         speechlens analyze | serve
 │   ├── server.py      FastAPI: /api/analyze, /api/health, web UI
 │   └── static/index.html

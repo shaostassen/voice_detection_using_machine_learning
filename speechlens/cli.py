@@ -1,4 +1,4 @@
-"""Command-line interface: `speechlens analyze` and `speechlens serve`."""
+"""Command-line interface: `speechlens analyze | serve | speaker`."""
 from __future__ import annotations
 
 import argparse
@@ -80,6 +80,62 @@ def cmd_analyze(args) -> int:
     return 0
 
 
+def _speaker_gallery(args, create: bool):
+    """Open (or start) a gallery with the SpeechBrain ECAPA encoder."""
+    import os
+
+    from speechlens.speaker import SPEECHBRAIN_SOURCE, Gallery, speechbrain_encoder
+
+    exists = os.path.exists(args.gallery)
+    if not exists and not create:
+        raise SystemExit(f"no gallery at {args.gallery}; enrol someone first")
+    enc_id = f"speechbrain:{SPEECHBRAIN_SOURCE}"
+    embed = speechbrain_encoder()          # heavy import: after the cheap checks
+    if exists:
+        return Gallery.load(args.gallery, embed, enc_id)
+    return Gallery(embed, enc_id)
+
+
+def cmd_speaker(args) -> int:
+    from speechlens.audio import load_audio
+
+    if args.action == "enroll":
+        g = _speaker_gallery(args, create=True)
+        for path in args.audio:
+            y, sr = load_audio(path)
+            g.enroll(args.name, y, sr)
+        g.save(args.gallery)
+        print(f"enrolled {args.name!r} from {len(args.audio)} clip(s); "
+              f"gallery now has: {', '.join(g.names)}")
+        print("note: the gallery file is biometric data; keep it private and "
+              "only enrol people who have agreed.")
+        return 0
+
+    if args.action == "verify" and args.threshold is None:
+        raise SystemExit("verify needs --threshold. There is no safe default: "
+                         "scores depend on the encoder and your audio. Measure "
+                         "impostor scores and use speechlens.speaker."
+                         "threshold_for_far (see docs/HOW_IT_WORKS.md).")
+    g = _speaker_gallery(args, create=False)
+    y, sr = load_audio(args.audio[0])
+    if args.action == "identify":
+        name, score, ranking = g.identify(y, sr, threshold=args.threshold)
+        for n, sc in ranking:
+            print(f"  {n:20s} cosine={sc:+.3f}")
+        if name is None:
+            print(f"-> no match above threshold {args.threshold}")
+        else:
+            note = "" if args.threshold is not None else (
+                "  (closed-set: nearest enrolled speaker, even for a stranger; "
+                "pass --threshold to allow 'none')")
+            print(f"-> {name}{note}")
+        return 0
+    ok, score = g.verify(y, sr, args.name, args.threshold)
+    print(f"{'ACCEPT' if ok else 'REJECT'}  claimed={args.name!r}  "
+          f"cosine={score:+.3f}  threshold={args.threshold}")
+    return 0 if ok else 1
+
+
 def cmd_serve(args) -> int:
     import os
 
@@ -132,7 +188,22 @@ def main(argv=None) -> int:
     s.add_argument("--device", default="auto")
     s.set_defaults(func=cmd_serve)
 
+    sp = sub.add_parser(
+        "speaker", help="enrol / identify / verify speakers (needs the "
+                        "'speaker' extra: torch + speechbrain)")
+    sp.add_argument("action", choices=["enroll", "identify", "verify"])
+    sp.add_argument("--gallery", required=True, help="gallery .npz file")
+    sp.add_argument("--name", help="speaker name (enroll / verify)")
+    sp.add_argument("--threshold", type=float, default=None,
+                    help="cosine threshold. identify: optional (enables "
+                         "open-set). verify: required.")
+    sp.add_argument("audio", nargs="+", help="audio file(s)")
+    sp.set_defaults(func=cmd_speaker)
+
     args = p.parse_args(argv)
+    if getattr(args, "func", None) is cmd_speaker and args.action in (
+            "enroll", "verify") and not args.name:
+        p.error(f"speaker {args.action} needs --name")
     return args.func(args)
 
 
