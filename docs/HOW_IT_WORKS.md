@@ -360,6 +360,45 @@ did not run synthesis here — no GPU, no model weights, and Hugging Face is not
 reachable from this sandbox. Chatterbox on CPU measured about 2× *slower* than
 realtime in SpeechForge's own bench, so budget for that.
 
+### One script: record, clone, score
+
+`scripts/clone_my_voice.py` runs the whole protocol above on your own voice:
+
+```bash
+pip install -e .                                        # this repo
+git clone https://github.com/shaostassen/speechforge
+pip install -e "./speechforge[chatterbox,similarity]"   # torch; first run downloads weights
+
+pip install sounddevice                                 # only for recording
+python scripts/clone_my_voice.py record --dir my_voice  # 7 prompts; warns on clipping/noise/level
+python scripts/clone_my_voice.py check  --dir my_voice
+python scripts/clone_my_voice.py run    --dir my_voice --backend chatterbox
+```
+
+Already have recordings? `import --own-voice --take a.wav "exactly what is said" --take b.wav "..."`
+(first take = the reference). `run` clones each held-out sentence from the
+reference, writes `clone_NN.wav` next to your `take_NN.wav` so you can listen to
+both, prints per-utterance and aggregate scores with your real voice as the
+ground-truth row, and saves `results.json` with the provenance (backend,
+encoder, ASR model, seed, hardware, command).
+
+Things it does on purpose: take 0 is a longer passage used as the reference and
+everything else is held out; clones are scored against held-out recordings,
+never the reference; sentences are sentence-cased before the model sees them;
+it refuses to run without confirmation that the voice is yours (or its owner
+agreed); it stops with fewer than two held-out takes. The default ASR is
+`small` so it is practical on a CPU, which means its WER is **not** comparable
+to SpeechForge's published `large-v3` numbers — use `--asr-model large-v3` for
+that. With about 6 sentences these results describe your voice and setup; they
+are not a benchmark, and listening to the clones is the real test.
+
+The pipeline logic is tested offline with fake models
+(`tests/test_clone_my_voice.py`; set `SPEECHFORGE_PATH` to a checkout or the
+pipeline tests skip). The recording step, and `run` with real Chatterbox,
+Whisper and the speaker encoder, have **not** been run — the dev sandbox has no
+microphone, no GPU and no route to Hugging Face. Expect to fix a rough edge or
+two on your first real run, and tell me what breaks.
+
 ### Risks, and what to do about them
 
 - **Never clone someone else's voice without their permission.** Impersonation

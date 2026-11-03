@@ -350,5 +350,6 @@ speechlens/
 ├── tests/             offline unit + component tests
 ├── scripts/validate.py  GPU validation harness (smoke / snr / bench)
 ├── scripts/explain.py   stage-by-stage walkthrough: sound -> mel, speaker ID
+├── scripts/clone_my_voice.py  record -> clone -> score your own voice (needs SpeechForge)
 └── docs/HOW_IT_WORKS.md  sound -> text, speaker ID, voice cloning explained
 ```
