@@ -14,6 +14,10 @@ with a temperature fallback ladder, repetition and no-speech gates, and
 confidence flagging so low-quality output is marked instead of
 silently trusted.
 
+New to how any of this works? [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md)
+explains how sound becomes text, whether a voice can identify a person, and what
+voice cloning involves — with runnable NumPy demos (`scripts/explain.py`).
+
 ## Install
 
 ```bash
@@ -333,9 +337,13 @@ speechlens/
 │   ├── asr.py         faster-whisper wrapper + RobustnessConfig
 │   ├── pipeline.py    orchestrator → AnalysisResult (JSON-ready)
 │   ├── metrics.py     WER / CER
+│   ├── synth.py       toy source-filter voice (teaching + offline tests)
+│   ├── voiceprint.py  toy MFCC speaker identification (teaching, not security)
 │   ├── cli.py         speechlens analyze | serve
 │   ├── server.py      FastAPI: /api/analyze, /api/health, web UI
 │   └── static/index.html
 ├── tests/             offline unit + component tests
-└── scripts/validate.py  GPU validation harness (smoke / snr / bench)
+├── scripts/validate.py  GPU validation harness (smoke / snr / bench)
+├── scripts/explain.py   stage-by-stage walkthrough: sound -> mel, speaker ID
+└── docs/HOW_IT_WORKS.md  sound -> text, speaker ID, voice cloning explained
 ```
